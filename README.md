@@ -5,6 +5,8 @@ This software works with N64 ROMs and binaries. It is capable of the following:
  - File extraction from Zelda 64 ROMs
  - Zelda 64 Overlay disassembly
  - Function signature creation and identification
+ 
+ This is a work in progress.
 
 ## Example: EUC-JP string detection
 
