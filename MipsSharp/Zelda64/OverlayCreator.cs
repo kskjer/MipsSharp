@@ -7,14 +7,36 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using MipsSharp.Binutils;
+using System.Collections.Immutable;
 
 namespace MipsSharp.Zelda64
 {
     public class OverlayCreator
     {
-        public static IReadOnlyList<byte> CreateFromElf(string pathToElf)
+        public static string CreateCSourceFromOverlayRelocations(string symbolName, IEnumerable<uint> overlayRelocations)
         {
-            var elf = ELFReader.Load(pathToElf);
+            return string.Join(
+                Environment.NewLine,
+                new[]
+                {
+                    "const unsigned int",
+                    $"{symbolName}[] = ",
+                    "{"
+                }.Concat(
+                    overlayRelocations
+                        .Select((r, i) => new { r = string.Format("0x{0:X8}U, ", r), i })
+                        .GroupBy(r => r.i / 4)
+                        .Select(g => "\t" + string.Join("", g.Select(k => k.r)))
+                )
+                .Concat(new[] { "};" })
+            );
+        }
+
+
+        public static ImmutableArray<uint> GetOverlayRelocationsFromElf(IReadOnlyList<byte> elfContents)
+        {
+            var elf = Elf.LoadFromBytes(elfContents);
             var sections = new[] { ".text", ".data", ".rodata", ".bss" };
             var ours = elf.Sections
                 .Where(s => sections.Contains(s.Name))
@@ -27,54 +49,73 @@ namespace MipsSharp.Zelda64
             Func<UInt32, int> findSectionId = (addr) =>
                 ours
                     .Select((s, i) => new { s, i })
-                    .First(s => s.s.LoadAddress >= addr && s.s.Size <= addr - s.s.LoadAddress)
+                    .First(s => s.s.LoadAddress <= addr && s.s.Size > addr - s.s.LoadAddress)
                     .i;
-
 
             var sectionsData = ours
                 .SelectMany(s => s.GetContents())
                 .ToInstructions()
                 .ToArray();
-                
-            var relocs = sections.Take(3).Select(s => $".rel{s}").ToArray();
+
+            var relocs = sections.Take(3).Select((s, i) => new { Idx = i, Name = $".rel{s}" }).ToArray();
             var relSecs = elf.Sections
-                .Where(s => relocs.Contains(s.Name))
+                .Where(s => relocs.Any(x => x.Name == s.Name))
+                .Select(s => new { s, Idx = relocs.First(x => x.Name == s.Name).Idx })
                 .ToArray();
 
             var relContents = relSecs
-                .SelectMany((s, i) => s
+                .SelectMany(s => s.s
                     .GetContents()
                     .ToWordGroups(2)
-                    .Select(g => g[0] | ((g[1] & 0x3F) << 24) | (uint)((i + 1) << 30))
-                )
-                //.Select(g => new { Data = sectionsData[idxFromAddr(g[0])], Info = g })
-                .ToArray();
-
-            //var bssRelocs = relContents
-            //    .Where(r => r[0] >= ours[3].LoadAddress && r[0] < ours[3].LoadAddress + ours[3].Size)
-            //    .ToArray();
-
-
-            File.WriteAllText(
-                Path.Combine(Path.GetDirectoryName(pathToElf), "ovl-relocations.c"),
-                string.Join(
-                    Environment.NewLine,
-                    new[]
+                    .Select(x =>
                     {
-                        "static const unsigned int",
-                        "relocations[] = ",
-                        "{"
-                    }.Concat(
-                        relContents
-                            .Select((r, i) => new { r = string.Format("0x{0:X8}U, ", r), i })
-                            .GroupBy(r => r.i / 4)
-                            .Select(g => "\t" + string.Join("", g.Select(k => k.r)))
-                    )
-                    .Concat(new[] { "};" })
-                )
-            );
+                        var sectionIdx = findSectionId(x[0]);
+                        var section = ours[sectionIdx];
 
-            return null;
+                        return new uint[] { x[0] - section.LoadAddress, x[1] };
+                    })
+                    .Where(x =>
+                    {
+                        // Make sure we don't get relocs for JALs that are outside our image
+                        if (s.Idx != 0)
+                            return true;
+
+                        if ((x[1] & 0x3F) == (uint)RelocationType.R_MIPS_26)
+                        {
+                            var insn = ours[0].GetContents()
+                                .ToInstructions()
+                                .Skip((int)(x[0] / 4))
+                                .First();
+
+                            if (insn.FullTarget(ours[0].LoadAddress) < ours[0].LoadAddress)
+                                return false;
+                        }
+
+                        return true;
+                    })
+                    .Select(g => g[0] | ((g[1] & 0x3F) << 24) | (uint)((s.Idx + 1) << 30))
+                )
+                .ToImmutableArray();
+
+            return relContents;
+        }
+
+        public static string GenerateMakefileForOvl(string mipsSharpPath, string ovlName, UInt32 ovlEntryPoint)
+        {
+            return string.Join(
+                Environment.NewLine,
+                new[]
+                {
+                   $"MIPSSHARP_PATH = {mipsSharpPath}",
+                    "",
+                   $"OVL_ADDR = 0x{ovlEntryPoint.ToString("X8")}",
+                   $"OVL_NAME = {ovlName}",
+                    "PARTS    = $(OVL_NAME).o",
+                    "TARGET   = $(OVL_NAME).elf",
+                    "",
+                    "include ../../dist/z64-ovl.mk"
+                }
+            );
         }
     }
 }

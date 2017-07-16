@@ -39,7 +39,7 @@ namespace MipsSharp
             Extract,
             DisassembleOverlay,
             DisassembleAllOverlays,
-            ElfToOverlay
+            GenerateOverlayRelocs
         }
 
         static Mode _mode;
@@ -78,6 +78,8 @@ namespace MipsSharp
             { "help"             , "Show this message and exit",                     v => _mode = Mode.ShowHelp         },
         };
 
+        static readonly Overlay.Options _overlayOptions = new Overlay.Options();
+
         static readonly OptionSet _signatureOptions = new OptionSet
         {
             { "i|indent", "Format/beautify output JSON", v => SignaturesOptions.IndentJson = true },
@@ -95,7 +97,7 @@ namespace MipsSharp
 
         static readonly OptionSet _zelda64Modes = new OptionSet
         {
-            { "O|elf-to-ovl", "Convert ELF file to overlay", v => _zeldaMode = ZeldaMode.ElfToOverlay },
+            { "O|elf-to-ovl", "Generate overlay relocations .c file", v => _zeldaMode = ZeldaMode.GenerateOverlayRelocs },
             { "e|extract", "Extract the contents of a Zelda 64 ROM", v => _zeldaMode = ZeldaMode.Extract },
             { "D|disassemble-overlay", "Disassemble an overlay file", v => _zeldaMode = ZeldaMode.DisassembleOverlay },
             { "A|disassemble-all", "Disassemble all overlay files in ROM", v => _zeldaMode = ZeldaMode.DisassembleAllOverlays }
@@ -103,7 +105,8 @@ namespace MipsSharp
 
         static readonly OptionSet _disasmOptions = new OptionSet
         {
-            { "P|pc", "Print PC and raw instruction next to disasembly", v => DisassemblyOptions.DebugPc = true }
+            { "P|pc", "Print PC and raw instruction next to disasembly", v => DisassemblyOptions.DebugPc = true },
+            { "n|number", "Use a symbol's index instead of its address for name", v => _overlayOptions.NumberSymbols = true }
         };
 
         static readonly OptionSet _eucJpOptions = new OptionSet
@@ -132,32 +135,25 @@ namespace MipsSharp
             foreach (var file in rom.Files.Select((f, i) => new { f, i }))
                 File.WriteAllBytes(string.Format("{0:0000} {1}", file.i, file.f.Name), file.f.Contents.ToArray());
         }
+        
 
-        static void MainDumbDis(string[] args)
+        static int Main(string[] args)
         {
-            var file = new Overlay(Convert.ToUInt32(args[1], 16), File.ReadAllBytes(args[0]));
-            var disasm = Disassembler.Default;
-
-            var lines = file.Sections[0].Data
-                .ToInstructions()
-                .Select((insn, i) => new { i, insn });
-
-            foreach(var l in lines)
+            try
             {
-                var pc = l.i * 4 + file.EntryPoint;
-
-                Console.WriteLine("{0:X8}: {1}", pc, disasm.Disassemble((uint)pc, l.insn));
-
-                var relo = file.Relocations
-                    .SingleOrDefault(r => r.Location == l.i * 4);
-
-                if (relo != null)
-                    Console.WriteLine("\t{0}", relo);
+                MainReal(args);
             }
-            
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+
+                return -1;
+            }
+
+            return 0;
         }
 
-        static void Main(string[] args)
+        static void MainReal(string[] args)
         {
             Console.OutputEncoding = Encoding.UTF8;
 
@@ -368,7 +364,7 @@ namespace MipsSharp
                                 foreach (var o in zrom.Overlays)
                                 {
                                     var p = o.File.Name;
-                                    var ovl = new Overlay(o.VmaStart, o.File.Contents);
+                                    var ovl = new Overlay(o.VmaStart, o.File.Contents, _overlayOptions);
 
                                     Directory.CreateDirectory(p);
 
@@ -376,15 +372,31 @@ namespace MipsSharp
                                         Path.Combine(p, $"{o.File.Name}.S"),
                                         ovl.Disassemble(DisassemblyOptions.DebugPc)
                                     );
+
                                     File.WriteAllText(
                                         Path.Combine(p, "conf.ld"),
                                         ovl.LinkerScript
                                     );
+
+                                    File.WriteAllText(
+                                        Path.Combine(p, "Makefile"),
+                                        OverlayCreator.GenerateMakefileForOvl("../..", o.File.Name, o.VmaStart)
+                                    );
+
+                                    File.WriteAllBytes(
+                                        Path.Combine(p, $"{o.File.Name}.ovl.orig"),
+                                        o.File.Contents.ToArray()
+                                    );
                                 }
                                 break;
 
-                            case ZeldaMode.ElfToOverlay:
-                                OverlayCreator.CreateFromElf(files[0]);
+                            case ZeldaMode.GenerateOverlayRelocs:
+                                Console.WriteLine(
+                                    OverlayCreator.CreateCSourceFromOverlayRelocations(
+                                        "__relocations",
+                                        OverlayCreator.GetOverlayRelocationsFromElf(File.ReadAllBytes(files[0]))
+                                    )
+                                );
                                 break;
                         }
                     }
@@ -431,7 +443,7 @@ namespace MipsSharp
         static void MainDis(string[] args)
         {
             var file = File.ReadAllBytes(args[0]);
-            var test = new Overlay(Convert.ToUInt32(args[1], 16), file); // 0x80832210
+            var test = new Overlay(Convert.ToUInt32(args[1], 16), file, _overlayOptions);
 
             var disasm = new Disassembler(new DefaultDisassemblyFormatter(test.Symbols));
 

@@ -6,6 +6,8 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Collections;
 using System.Text.RegularExpressions;
+using MipsSharp.Sys;
+using MipsSharp.Exceptions;
 
 namespace MipsSharp.Zelda64
 {
@@ -55,16 +57,26 @@ namespace MipsSharp.Zelda64
             public UInt32 Location => Word & 0x00FFFFFF;
             public UInt32 AbsoluteLocation => Location + Section.StartAddress;
 
+            private static string PadRelocName(RelocationType type) =>
+                type.ToString().PadRight(nameof(RelocationType.R_MIPS_HI16).Length);
+
             public override string ToString()
             {
                 try
                 {
-                    return string.Format("0x{0:X8} (0x{4:X8}) {1} {2} {3}", Location, Type, SectionNames[SectionId], Disassembly, Address);
+                    return string.Format("[0x{0:X8}/0x{5:X8}] (0x{4:X8}) {1} {2}{3}", Location, PadRelocName(Type), SectionNames[SectionId].PadRight(14), Disassembly.Trim(), Address, AbsoluteLocation);
                 }
                 catch
                 {
-                    return string.Format("0x{0:X8} (0x{4:X8}) {1} {2}", Location, Type, SectionNames[SectionId], Disassembly);
+                    return $" {("0x" + Location.ToString("X8")).PadRight(35)} {PadRelocName(Type)} {SectionNames[SectionId].PadRight(14)}{Disassembly.Trim()}";
                 }
+            }
+
+            private static readonly Regex _spacingRegex = new Regex(@"\s+", RegexOptions.Compiled);
+
+            public string ToShortString()
+            {
+                return _spacingRegex.Replace(ToString().Trim(), " ");
             }
 
             public SectionInformation Section =>
@@ -74,7 +86,9 @@ namespace MipsSharp.Zelda64
                 Utilities.ReadU32(Section.Data, (int)Location);
 
             public string Disassembly =>
-                Disassembler.Default.Disassemble(Section.StartAddress + Location, Data).ToString();
+                Type == RelocationType.R_MIPS_32
+                ? string.Format("0x{0:X8}", Data)
+                : Disassembler.Default.Disassemble(Section.StartAddress + Location, Data).ToString();
 
             private UInt32? _address;
             private Relocation _sibling;
@@ -124,9 +138,6 @@ namespace MipsSharp.Zelda64
 
                         case RelocationType.R_MIPS_HI16:
                         case RelocationType.R_MIPS_LO16:
-
-                            if (AbsoluteLocation == 0x80801e18)
-                                Console.WriteLine("fubar");
 
                             SetSibling();
 
@@ -229,7 +240,7 @@ namespace MipsSharp.Zelda64
         public static IReadOnlyList<string> SectionNames { get; } = new[] { ".text", ".data", ".rodata", ".bss" };
 
         public UInt32 EntryPoint { get; }
-        public UInt32 Size => (UInt32)Sections.Sum(s => s.Size);
+        public UInt32 Size => (UInt32)Sections.Sum(s => s.Size) + HeaderOffset;
         public UInt32 EndAddress => EntryPoint + Size;
 
         public string LinkerScript { get; }
@@ -239,8 +250,13 @@ namespace MipsSharp.Zelda64
 
         public UInt32 HeaderOffset { get; }
 
+        public class Options
+        {
+            public bool NumberSymbols { get; set; }
+        }
 
-        public Overlay(UInt32 entryPoint, IReadOnlyList<byte> overlayData, IEnumerable<KeyValuePair<UInt32, string>> extraSymbols = null)
+
+        public Overlay(UInt32 entryPoint, IReadOnlyList<byte> overlayData, Options options = null, IEnumerable<KeyValuePair<UInt32, string>> extraSymbols = null)
         {
             EntryPoint = entryPoint;
             _extraSymbols = extraSymbols ?? new KeyValuePair<UInt32, string>[0];
@@ -282,59 +298,127 @@ namespace MipsSharp.Zelda64
 
 
 
-            var jimmy = relocations
+            var hiLoRelocs = relocations
                 .Where(r => r.Type == RelocationType.R_MIPS_HI16 || r.Type == RelocationType.R_MIPS_LO16)
-                .GroupBy(r => r.Type == RelocationType.R_MIPS_HI16 ? ((Instruction)r.Data).GprRt : ((Instruction)r.Data).GprBase)
-                .Select(g => new { g.Key, List = g.ToList() })
-                .ToList();
+                .ToArray();
 
-            foreach(var regGroup in jimmy)
+            Relocation lastHi16 = null;
+
+            foreach (var r in hiLoRelocs)
             {
-                Relocation lastHi16 = null;
-
-                for( var i = 0; i < regGroup.List.Count; i++)
+                if (r.Type == RelocationType.R_MIPS_HI16)
                 {
-                    var r = regGroup.List[i];
+                    lastHi16 = r;
+                }
+                else
+                {
+                    if (lastHi16 == null)
+                        throw new RelocationException(
+                            $"Relocation `{r.ToShortString()}` has no preceding R_MIPS_HI16.",
+                            relocations,
+                            r.Location
+                        );
 
 
-                    if (r.Type == RelocationType.R_MIPS_HI16)
+                    var address = ((IInternalRelocation)r).Address =
+                        (UInt32)((new Instruction(lastHi16.Data).Immediate << 16) + new Instruction(r.Data).ImmediateSigned);
+
+                    if (((IInternalRelocation)lastHi16).Sibling == null)
                     {
-                        if(lastHi16 != null && ((IInternalRelocation)lastHi16).Sibling == null)
-                        {
-                            ((IInternalRelocation)lastHi16).Sibling = regGroup.List
-                                .SkipWhile(g => g.Location <= lastHi16.Location)
-                                .FirstOrDefault(g => g.Type == RelocationType.R_MIPS_LO16);
-                        }
-
-                        lastHi16 = r;
+                        ((IInternalRelocation)lastHi16).Sibling = r;
+                        ((IInternalRelocation)lastHi16).Address = address;
                     }
-                    else
-                    {
-                        if (lastHi16 == null)
-                            throw new Exception();
 
-                        ((IInternalRelocation)lastHi16).Sibling = ((IInternalRelocation)lastHi16).Sibling ?? r;
-                        ((IInternalRelocation)lastHi16).Address = ((IInternalRelocation)r).Address =
-                            (UInt32)((new Instruction(lastHi16.Data).Immediate << 16) + new Instruction(r.Data).ImmediateSigned);
-
-                        ((IInternalRelocation)r).Sibling = lastHi16;
-                    }
+                    ((IInternalRelocation)r).Sibling = lastHi16;
                 }
             }
 
+            var textInsns = Sections[0].Data
+                    .ToInstructions()
+                    .ToArray();
 
-            for (var i = Relocations.Count - 1; i >= 0; i--)
+            var fns = textInsns
+                .DiscoverFunctions(EntryPoint)
+                .ToArray();
+
+            Symbols =
+                new OverlaySymbols(
+                    this,
+                    Relocations
+                        .OrderBy(r => r.Address)
+                        .GroupBy(r => r.Address)
+                        .Select((g, i) => {
+
+                            var typeHint = g
+                                .Select(t => t.TypeHint)
+                                .Aggregate((t1, t2) => t1 | t2);
+
+                            return options.NumberSymbols
+                                ? new Symbol(g.Key, $"{Symbol.HintToName(typeHint)}_{i}", typeHint)
+                                : new Symbol(g.Key, typeHint);
+                        })
+                        .Concat(
+                            textInsns
+                                .DiscoverBranchTargets(EntryPoint)
+                                .GroupBy(t => fns.First(f => t >= f.StartAddress && t < f.EndAddress).StartAddress)
+                                .SelectMany((g, outerI) => g.Select((b, i) => new Symbol(b, $"$L{outerI}_{i}", TypeHint.BranchTarget)))
+                        )
+                        .Concat(
+                            textInsns
+                                .DiscoverFunctionCalls(EntryPoint)
+                                .Where(f => f < EntryPoint)
+                                .Select(f =>
+                                    f < EntryPoint
+                                    ? new Symbol(f, string.Format("external_func_{0:X8}", f), TypeHint.Function, SymbolType.External)
+                                    : new Symbol(f, string.Format("func_{0:X8}", f), TypeHint.Function, SymbolType.External))
+                        )
+                        .Concat(
+                            _extraSymbols
+                                .Select(s => new Symbol(s.Key, s.Value, 0, SymbolType.External))
+                        ),
+                    Sections[0]
+                );
+
+            try
             {
-                var o = Relocations[i].Address;
-            }
+                for (var i = Relocations.Count - 1; i >= 0; i--)
+                {
+                    try
+                    {
+                        var o = Relocations[i].Address;
+                    }
+                    catch (Exception e)
+                    {
+                        throw new RelocationException(
+                            $"Error evaluating address for relocation {i} ({Relocations[i].ToShortString()})",
+                            e,
+                            relocations,
+                            Relocations[i].Location
+                        );
+                    }
+                }
 
-            LinkerScript = string.Join(Environment.NewLine, new[] {
-                string.Format("ADDRESS_START = 0x{0:X8};", EntryPoint),
-                "ENTRY_POINT = ADDRESS_START;"
-            }.Concat(
-                Symbols
-                .Where(s => !(s.Address >= EntryPoint && s.Address < EndAddress))
-                .Select(s => string.Format("{0} = 0x{1:X8};", s.Name, s.Address))));
+                LinkerScript = string.Join(
+                    Environment.NewLine, 
+                    new[] 
+                    {
+                        string.Format("ADDRESS_START = 0x{0:X8};", EntryPoint),
+                        "ENTRY_POINT = ADDRESS_START;"
+                    }.Concat(
+                        Symbols
+                            .Where(s => !(s.Address >= EntryPoint && s.Address < EndAddress))
+                            .Select(s => string.Format("{0} = 0x{1:X8};", s.Name, s.Address))
+                    )
+                );
+            }
+            catch (RelocationException)
+            {
+                throw;
+            }
+            catch (Exception e)
+            {
+                throw new RelocationException("Error while evaluating relocation addresses and generating linker script", e, relocations);
+            }
         }
         
         
@@ -474,58 +558,10 @@ namespace MipsSharp.Zelda64
             IEnumerator IEnumerable.GetEnumerator() =>
                 GetEnumerator();
         }
+        
+        public IOverlaySymbols Symbols { get; }
 
-        private IOverlaySymbols _cachedSymbols;
 
-        public IOverlaySymbols Symbols
-        {
-            get
-            {
-                if (_cachedSymbols != null)
-                    return _cachedSymbols;
-
-                var textInsns = Sections[0].Data
-                    .ToInstructions()
-                    .ToArray();
-
-                var fns = textInsns
-                    .DiscoverFunctions(EntryPoint)
-                    .ToArray();
-
-                return _cachedSymbols ?? (_cachedSymbols =
-                    new OverlaySymbols(
-                        this,
-                        Relocations
-                            .GroupBy(r => r.Address)
-                            .Select(g => new Symbol(
-                                    g.Key,
-                                    g.Select(t => t.TypeHint)
-                                     .Aggregate((t1, t2) => t1 | t2)
-                            ))
-                            .Concat(
-                                textInsns
-                                    .DiscoverBranchTargets(EntryPoint)
-                                    .GroupBy(t => fns.First(f => t >= f.StartAddress && t < f.EndAddress).StartAddress)
-                                    .SelectMany((g, outerI) => g.Select((b, i) => new Symbol(b, $"$L{outerI}_{i}", TypeHint.BranchTarget)))
-                            )
-                            .Concat(
-                                textInsns
-                                    .DiscoverFunctionCalls(EntryPoint)
-                                    .Where(f => f < EntryPoint)
-                                    .Select(f => 
-                                        f < EntryPoint
-                                        ? new Symbol(f, string.Format("external_func_{0:X8}", f), TypeHint.Function, SymbolType.External)
-                                        : new Symbol(f, string.Format("func_{0:X8}", f), TypeHint.Function, SymbolType.External))
-                            )
-                            .Concat(
-                                _extraSymbols
-                                    .Select(s => new Symbol(s.Key, s.Value, 0, SymbolType.External))
-                            ),
-                        Sections[0]
-                    )
-                );
-            }
-        }
 
         public IEnumerable<string> Disassemble(bool debugAddress = false)
         {
@@ -536,10 +572,10 @@ namespace MipsSharp.Zelda64
                 ? $"\t{left}"
                 : $"\t{left.PadRight(16)}{right}";
 
-            Func<UInt32, Instruction, DisassemblerOutput, string> formatDisasm = (pc, word, output) =>
+            Func<UInt32, Instruction, DisassemblerOutput, string> formatDisasm = (pc, insn, output) =>
                 !debugAddress
                 ? formatPair(output.Opcode, output.Operands)
-                : formatPair(output.Opcode, (output.Operands ?? "").PadRight(32) + string.Format("# 0x{0:X8}  {1}", pc, Disassembler.DefaultWithoutPc.Disassemble(0, word)));
+                : formatPair(output.Opcode, (output.Operands ?? "").PadRight(32) + string.Format("# 0x{0:X8}  0x{2:X8}  {1}", pc, Disassembler.DefaultWithoutPc.Disassemble(0, insn), insn.Word));
 
             yield return "#include \"mips.h\"";
             yield return "#define s8 $fp";
@@ -678,13 +714,21 @@ namespace MipsSharp.Zelda64
                                 else if (symbol.TypeHint.HasFlags(TypeHint.Single))
                                 {
                                     size(4);
-                                    stuffs.Add(formatPair(".single", BitConverter.ToSingle(BitConverter.GetBytes(Utilities.ReadU32(section.Data, i)), 0) + ""));
+
+                                    var flt = BitConverter.ToSingle(BitConverter.GetBytes(Utilities.ReadU32(section.Data, i)), 0);
+
+                                    stuffs.AddRange(Float.GenerateAssemblyLine(flt).Select(y => formatPair(y.left, y.right)));
+
                                     i += 3;
                                 }
                                 else if (symbol.TypeHint.HasFlags(TypeHint.Double))
                                 {
-                                    size(4);
-                                    stuffs.Add(formatPair(".double", BitConverter.ToDouble(BitConverter.GetBytes(Utilities.ReadU64(section.Data, i)), 0) + ""));
+                                    size(8);
+
+                                    var flt = BitConverter.ToDouble(BitConverter.GetBytes(Utilities.ReadU64(section.Data, i)), 0);
+
+                                    stuffs.AddRange(Float.GenerateAssemblyLine(flt).Select(y => formatPair(y.left, y.right)));
+
                                     i += 7;
                                 }
                                 else
@@ -727,7 +771,7 @@ namespace MipsSharp.Zelda64
 
                         if (bssSyms.Length == 0)
                         {
-                            yield return formatPair(".lcomm", $"__filler,{Sections[3].Size}");
+                            yield return formatPair(".space", $"{Sections[3].Size}");
                             break;
                         }
 
@@ -740,7 +784,7 @@ namespace MipsSharp.Zelda64
                             {
                                 var spaceSize = bssSyms[symIdx].Address - curAddr;
 
-                                yield return formatPair(".lcomm", $"__filler,{spaceSize}");
+                                yield return formatPair(".space", $"{spaceSize}");
 
                                 ptr += (int)spaceSize;
                             }
@@ -750,7 +794,13 @@ namespace MipsSharp.Zelda64
                                     ? section.EndAddress
                                     : bssSyms[symIdx + 1].Address) - sym.Address;
 
-                                yield return formatPair(".lcomm", $"{sym.Name},{size}");
+                                var right = $"{sym.Name},{size},1";
+
+                                if (debugAddress)
+                                    right = right.PadRight(24) + string.Format("# 0x{0:X8}", ptr + section.StartAddress);
+
+                                yield return formatPair(".local", sym.Name);
+                                yield return formatPair(".comm", right);
 
                                 ptr += (int)size;
                                 symIdx++;

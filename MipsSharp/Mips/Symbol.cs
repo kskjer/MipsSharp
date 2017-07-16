@@ -22,7 +22,7 @@ namespace MipsSharp.Mips
             string.Format("{0:X8} {1}", Address, Name) +
             (TypeHint != 0 ? $" ({TypeHint})" : "");
 
-        private static string HintToName(UInt32 address, TypeHint hint) =>
+        public static string HintToName(TypeHint hint) =>
             hint.HasFlags(TypeHint.Function)         ? "func" :
             hint.HasFlags(TypeHint.Double)           ? "f64"  :
             hint.HasFlags(TypeHint.Single)           ? "f32"  :
@@ -35,7 +35,7 @@ namespace MipsSharp.Mips
             hint.HasFlags(TypeHint.DoubleWord)       ? "i64"  : "data";
 
         private static string GenName(UInt32 address, TypeHint hint) =>
-            string.Format("{0}_{1:X8}", HintToName(address, hint), address);
+            string.Format("{0}_{1:X8}", HintToName(hint), address);
 
         public Symbol(UInt32 address, TypeHint hint)
             : this(address, GenName(address, hint), hint)

@@ -268,23 +268,12 @@ namespace MipsSharp.Mips
 
             _interpreter.Handlers.ADDU = (pc, insn) =>
             {
-                if (insn.GprRt != 0)
-                {
-                    return new DisassemblerOutput(_formatter.FormatOpcode("addu"),
-                    _formatter.FormatOperands(
-                        _formatter.FormatGpr(insn.GprRd),
-                        _formatter.FormatGpr(insn.GprRs),
-                        _formatter.FormatGpr(insn.GprRt)
-                    ));
-                }
-                else
-                {
-                    return new DisassemblerOutput(_formatter.FormatOpcode("move"),
-                    _formatter.FormatOperands(
-                        _formatter.FormatGpr(insn.GprRd),
-                        _formatter.FormatGpr(insn.GprRs)
-                    ));
-                };
+                return new DisassemblerOutput(_formatter.FormatOpcode("addu"),
+                _formatter.FormatOperands(
+                    _formatter.FormatGpr(insn.GprRd),
+                    _formatter.FormatGpr(insn.GprRs),
+                    _formatter.FormatGpr(insn.GprRt)
+                ));
             };
 
 
@@ -520,7 +509,7 @@ namespace MipsSharp.Mips
             {
                 return new DisassemblerOutput(_formatter.FormatOpcode("break"),
                 _formatter.FormatOperands(
-                    _formatter.FormatHex((insn.Word >> 6) & ((1 << 10) - 1))
+                    _formatter.FormatHex((insn.Word >> 16) & ((1 << 10) - 1))
                 ));
             };
 
@@ -1184,12 +1173,27 @@ namespace MipsSharp.Mips
 
             _interpreter.Handlers.OR = (pc, insn) =>
             {
-                return new DisassemblerOutput(_formatter.FormatOpcode("or"),
-                _formatter.FormatOperands(
-                    _formatter.FormatGpr(insn.GprRd),
-                    _formatter.FormatGpr(insn.GprRs),
-                    _formatter.FormatGpr(insn.GprRt)
-                ));
+                if (insn.GprRt != 0)
+                {
+                    return new DisassemblerOutput(
+                        _formatter.FormatOpcode("or"),
+                        _formatter.FormatOperands(
+                            _formatter.FormatGpr(insn.GprRd),
+                            _formatter.FormatGpr(insn.GprRs),
+                            _formatter.FormatGpr(insn.GprRt)
+                        )
+                    );
+                }
+                else
+                {
+                    return new DisassemblerOutput(
+                        _formatter.FormatOpcode("move"),
+                        _formatter.FormatOperands(
+                        _formatter.FormatGpr(insn.GprRd),
+                        _formatter.FormatGpr(insn.GprRs)
+                        )
+                    );
+                }
             };
 
 
@@ -1200,7 +1204,7 @@ namespace MipsSharp.Mips
                         _formatter.FormatOpcode("li"),
                         _formatter.FormatOperands(
                             _formatter.FormatGpr(insn.GprRt),
-                            _formatter.FormatHex16(insn.Immediate)
+                            _formatter.FormatImmediate(pc, insn)
                         )
                     );
 
