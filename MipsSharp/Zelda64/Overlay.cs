@@ -258,6 +258,8 @@ namespace MipsSharp.Zelda64
 
         public Overlay(UInt32 entryPoint, IReadOnlyList<byte> overlayData, Options options = null, IEnumerable<KeyValuePair<UInt32, string>> extraSymbols = null)
         {
+            options = options ?? new Options();
+
             EntryPoint = entryPoint;
             _extraSymbols = extraSymbols ?? new KeyValuePair<UInt32, string>[0];
 
