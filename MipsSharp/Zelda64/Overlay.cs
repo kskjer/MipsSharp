@@ -817,7 +817,7 @@ namespace MipsSharp.Zelda64
                         var fillerIdx = 0;
 
                         var bssSyms = Symbols
-                            .Where(s => s.Address >= section.StartAddress)
+                            .Where(s => s.Address >= section.StartAddress && s.Address < section.EndAddress)
                             .OrderBy(s => s.Address)
                             .ToArray();
 
