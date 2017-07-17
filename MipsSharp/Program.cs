@@ -39,7 +39,8 @@ namespace MipsSharp
             Extract,
             DisassembleOverlay,
             DisassembleAllOverlays,
-            GenerateOverlayRelocs
+            GenerateOverlayRelocs,
+            DumpRelocations
         }
 
         static Mode _mode;
@@ -100,7 +101,8 @@ namespace MipsSharp
             { "O|elf-to-ovl", "Generate overlay relocations .c file", v => _zeldaMode = ZeldaMode.GenerateOverlayRelocs },
             { "e|extract", "Extract the contents of a Zelda 64 ROM", v => _zeldaMode = ZeldaMode.Extract },
             { "D|disassemble-overlay", "Disassemble an overlay file", v => _zeldaMode = ZeldaMode.DisassembleOverlay },
-            { "A|disassemble-all", "Disassemble all overlay files in ROM", v => _zeldaMode = ZeldaMode.DisassembleAllOverlays }
+            { "A|disassemble-all", "Disassemble all overlay files in ROM", v => _zeldaMode = ZeldaMode.DisassembleAllOverlays },
+            { "R|dump-relocs", "Dump relocation table for overlay", v => _zeldaMode = ZeldaMode.DumpRelocations }
         };
 
         static readonly OptionSet _disasmOptions = new OptionSet
@@ -395,6 +397,23 @@ namespace MipsSharp
                                     OverlayCreator.CreateCSourceFromOverlayRelocations(
                                         "__relocations",
                                         OverlayCreator.GetOverlayRelocationsFromElf(File.ReadAllBytes(files[0]))
+                                    )
+                                );
+                                break;
+
+                            case ZeldaMode.DumpRelocations:
+                                Console.WriteLine(
+                                    string.Join(
+                                        Environment.NewLine,
+                                        new[]
+                                        {
+                                            "ID      Sec. loc   Abs. addr    Sym value   Type        Section       Disassembly",
+                                            //"    0  [0x0000001C/0x808FDEAC] (0x8090EE50) R_MIPS_HI16 .text         lui         $at,0x8091"
+                                        }.Concat(
+                                            new Overlay(Convert.ToUInt32(files[1], 16), File.ReadAllBytes(files[0]))
+                                                .Relocations
+                                                .Select((x, i) => string.Format("{0,5}  {1}", i, x))
+                                        )
                                     )
                                 );
                                 break;
