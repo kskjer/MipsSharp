@@ -27,7 +27,7 @@ namespace MipsSharp.Mips
             new Interpreter<MipsInstruction>(() => MipsInstruction.Invalid);
 
         private static readonly IDisassembler _disassembler =
-            Disassembler.DefaultWithoutPc;
+            Disassembler.DefaultWithoutPcWithoutPseudoInstructions;
 
 
         static Instruction()

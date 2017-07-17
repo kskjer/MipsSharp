@@ -203,13 +203,23 @@ namespace MipsSharp.Mips
         public static IDisassembler DefaultWithoutPc { get; } =
             new Disassembler(new PcAgnosticDisassemblyFormatter());
 
+        public static IDisassembler DefaultWithoutPcWithoutPseudoInstructions { get; } =
+            new Disassembler(new PcAgnosticDisassemblyFormatter(), new Options { EnablePseudoInstructions = false });
+
         private readonly Interpreter<DisassemblerOutput> _interpreter =
             new Interpreter<DisassemblerOutput>(() => null);
 
         private readonly IDisassemblyFormatter _formatter;
 
-        public Disassembler(IDisassemblyFormatter formatter)
+        public class Options
         {
+            public bool EnablePseudoInstructions { get; set; } = true;
+        }
+
+        public Disassembler(IDisassemblyFormatter formatter, Options options = null)
+        {
+            options = options ?? new Options();
+
             _formatter = formatter;
 
             _interpreter.Handlers.ADD = (pc, insn) =>
@@ -246,7 +256,7 @@ namespace MipsSharp.Mips
 
             _interpreter.Handlers.ADDIU = (pc, insn) =>
             {
-                if (insn.GprRs != 0)
+                if (insn.GprRs != 0 || options?.EnablePseudoInstructions == false)
                 {
                     return new DisassemblerOutput(_formatter.FormatOpcode("addiu"),
                     _formatter.FormatOperands(
@@ -1173,7 +1183,7 @@ namespace MipsSharp.Mips
 
             _interpreter.Handlers.OR = (pc, insn) =>
             {
-                if (insn.GprRt != 0)
+                if (insn.GprRt != 0 || options?.EnablePseudoInstructions == false)
                 {
                     return new DisassemblerOutput(
                         _formatter.FormatOpcode("or"),
@@ -1199,7 +1209,7 @@ namespace MipsSharp.Mips
 
             _interpreter.Handlers.ORI = (pc, insn) =>
             {
-                if (insn.GprRs == 0)
+                if (insn.GprRs == 0 && options?.EnablePseudoInstructions == true)
                     return new DisassemblerOutput(
                         _formatter.FormatOpcode("li"),
                         _formatter.FormatOperands(
