@@ -341,43 +341,61 @@ namespace MipsSharp.Zelda64
                 .DiscoverFunctions(EntryPoint)
                 .ToArray();
 
+            IEnumerable<Symbol> GenerateSymbols() =>
+                Relocations
+                    .OrderBy(r => r.Address)
+                    .GroupBy(r => r.Address)
+                    .Select((g, i) => {
+
+                        var typeHint = g
+                            .Select(t => t.TypeHint)
+                            .Aggregate((t1, t2) => t1 | t2);
+
+                        return options.NumberSymbols
+                            ? new Symbol(g.Key, $"{Symbol.HintToName(typeHint)}_{i}", typeHint)
+                            : new Symbol(g.Key, typeHint);
+                    })
+                    .Concat(
+                        textInsns
+                            .DiscoverBranchTargets(EntryPoint)
+                            .GroupBy(t => fns.First(f => t >= f.StartAddress && t < f.EndAddress).StartAddress)
+                            .SelectMany((g, outerI) => g.Select((b, i) => new Symbol(b, $"$L{outerI}_{i}", TypeHint.BranchTarget)))
+                    )
+                    .Concat(
+                        textInsns
+                            .DiscoverFunctionCalls(EntryPoint)
+                            .Where(f => f < EntryPoint)
+                            .Select(f =>
+                                f < EntryPoint
+                                ? new Symbol(f, string.Format("external_func_{0:X8}", f), TypeHint.Function, SymbolType.External)
+                                : new Symbol(f, string.Format("func_{0:X8}", f), TypeHint.Function, SymbolType.External))
+                    )
+                    .Concat(
+                        _extraSymbols
+                            .Select(s => new Symbol(s.Key, s.Value, 0, SymbolType.External))
+                    );
+
             Symbols =
                 new OverlaySymbols(
                     this,
-                    Relocations
-                        .OrderBy(r => r.Address)
-                        .GroupBy(r => r.Address)
-                        .Select((g, i) => {
-
-                            var typeHint = g
-                                .Select(t => t.TypeHint)
-                                .Aggregate((t1, t2) => t1 | t2);
-
-                            return options.NumberSymbols
-                                ? new Symbol(g.Key, $"{Symbol.HintToName(typeHint)}_{i}", typeHint)
-                                : new Symbol(g.Key, typeHint);
-                        })
-                        .Concat(
-                            textInsns
-                                .DiscoverBranchTargets(EntryPoint)
-                                .GroupBy(t => fns.First(f => t >= f.StartAddress && t < f.EndAddress).StartAddress)
-                                .SelectMany((g, outerI) => g.Select((b, i) => new Symbol(b, $"$L{outerI}_{i}", TypeHint.BranchTarget)))
-                        )
-                        .Concat(
-                            textInsns
-                                .DiscoverFunctionCalls(EntryPoint)
-                                .Where(f => f < EntryPoint)
-                                .Select(f =>
-                                    f < EntryPoint
-                                    ? new Symbol(f, string.Format("external_func_{0:X8}", f), TypeHint.Function, SymbolType.External)
-                                    : new Symbol(f, string.Format("func_{0:X8}", f), TypeHint.Function, SymbolType.External))
-                        )
-                        .Concat(
-                            _extraSymbols
-                                .Select(s => new Symbol(s.Key, s.Value, 0, SymbolType.External))
-                        ),
+                    GenerateSymbols(),
                     Sections[0]
                 );
+
+            var extra = GenerateExtraSymbols(this, Symbols);
+
+            Symbols = new OverlaySymbols(
+                this,
+                GenerateSymbols()
+                    .Select(x =>
+                    {
+                        if (extra.offsetSymbols.ContainsKey(x.Name))
+                            return new Symbol(x.Address, extra.offsetSymbols[x.Name], x.TypeHint);
+
+                        return x;
+                    }),
+                Sections[0]
+            );
 
             try
             {
@@ -405,9 +423,7 @@ namespace MipsSharp.Zelda64
                         string.Format("ADDRESS_START = 0x{0:X8};", EntryPoint),
                         "ENTRY_POINT = ADDRESS_START;"
                     }.Concat(
-                        Symbols
-                            .Where(s => !(s.Address >= EntryPoint && s.Address < EndAddress))
-                            .Select(s => string.Format("{0} = 0x{1:X8};", s.Name, s.Address))
+                        extra.list
                     )
                 );
             }
@@ -419,6 +435,37 @@ namespace MipsSharp.Zelda64
             {
                 throw new RelocationException("Error while evaluating relocation addresses and generating linker script", e, relocations);
             }
+        }
+
+
+
+        private static (Dictionary<string, string> offsetSymbols, IEnumerable<string> list) GenerateExtraSymbols(Overlay ovl, IOverlaySymbols syms)
+        {
+            var sortedSyms = syms
+                .OrderBy(x => x.Address)
+                .ToArray();
+
+            var orphans = sortedSyms
+                .Where(s => !ovl.Sections.Any(x => s.Address >= x.StartAddress && s.Address < x.EndAddress))
+                .ToArray();
+
+            bool checker(Symbol s) => 
+                s.Address >= ovl.EntryPoint && s.Address <= ovl.EndAddress;
+
+            var offsetSymbols = new Dictionary<string, string>();
+
+            var list = orphans
+                .Where(s => !checker(s))
+                .Select(s => string.Format("{0} = 0x{1:X8};", s.Name, s.Address));
+
+            foreach (var x in orphans.Where(s => checker(s)))      
+            {
+                var nearest = sortedSyms.TakeWhile(y => y.Address < x.Address).Last();
+
+                offsetSymbols.Add(x.Name, $"{nearest.Name} + {x.Address - nearest.Address}");
+            }
+
+            return (offsetSymbols, list);
         }
         
         
@@ -610,8 +657,10 @@ namespace MipsSharp.Zelda64
             yield return formatPair(".set", "noat");
             yield return "";
 
-            foreach (var section in Sections)
+            for (var j = 0; j < Sections.Count; j++)
             {
+                var section = Sections[j];
+
                 if (section.Size == 0)
                     continue;
 
