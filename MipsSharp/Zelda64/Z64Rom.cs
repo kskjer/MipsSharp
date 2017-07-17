@@ -55,7 +55,8 @@ namespace MipsSharp.Zelda64
                 .Where(f => f[3] != 0xFFFFFFFF && f[2] != 0xFFFFFFFF)
                 .Select((f, i) => new File(
                     f[0], f[1], f[2], f[3], 
-                    nameTable.Count > i ? nameTable[i] : null, 
+                    nameTable.Count > i ? nameTable[i] : null,
+                    string.Format("{0:0000}-{1:X8}", i + 1, f[0]),
                     null, 
                     _rom
                 ))
@@ -289,17 +290,18 @@ namespace MipsSharp.Zelda64
             }
 
 
-            public File(uint vstart, uint vend, uint pstart, uint pend, string name, FileType? type, Rom rom)
+            public File(uint vstart, uint vend, uint pstart, uint pend, string name, string autoName, FileType? type, Rom rom)
             {
                 VirtualStart = vstart;
                 VirtualEnd = vend;
                 PhysicalStart = pstart;
                 PhysicalEnd = pend;
-                Name = name;
 
                 _rawContents = rom.GetSegment((int)PhysicalStart, (int)PhysicalSize);
 
                 Type = type ?? (name != null ? DetectFromName(name) : DetectByContent());
+
+                Name = name ?? autoName;
             }
 
             private FileType DetectByContent()
