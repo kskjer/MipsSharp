@@ -687,31 +687,36 @@ namespace MipsSharp.Zelda64
                                 Action<int> size = (s) =>
                                     stuffs.Insert(2, formatPair(".size", $"{symbol.Name}, {s}"));
 
-                                if (reloc != null)
+                                bool checkNoSymbolsForNextNbytes(int length) =>
+                                    Enumerable.Range(1, length - 1)
+                                        .Select(y => Symbols.Lookup(pc + (UInt32)(i + y)))
+                                        .All(y => y == null);
+
+                                if (reloc != null && checkNoSymbolsForNextNbytes(4))
                                 {
                                     size(4);
                                     stuffs.Add(formatPair(".word", Symbols.Lookup(reloc.Address).Name));
                                     i += 3;
                                 }
-                                else if (symbol.TypeHint.HasFlags(TypeHint.HalfWord | TypeHint.HalfWordUnsigned))
+                                else if (symbol.TypeHint.HasFlags(TypeHint.HalfWord | TypeHint.HalfWordUnsigned) && checkNoSymbolsForNextNbytes(2))
                                 {
                                     size(2);
                                     stuffs.Add(formatPair(".short", string.Format("0x{0:X4}", section.Data[i] << 8 | section.Data[i + 1])));
                                     i++;
                                 }
-                                else if (symbol.TypeHint.HasFlags(TypeHint.Word | TypeHint.WordUnsigned))
+                                else if (symbol.TypeHint.HasFlags(TypeHint.Word | TypeHint.WordUnsigned) && checkNoSymbolsForNextNbytes(4))
                                 {
                                     size(4);
                                     stuffs.Add(formatPair(".word", string.Format("0x{0:X8}", Utilities.ReadU32(section.Data, i))));
                                     i += 3;
                                 }
-                                else if (symbol.TypeHint.HasFlags(TypeHint.DoubleWord))
+                                else if (symbol.TypeHint.HasFlags(TypeHint.DoubleWord) && checkNoSymbolsForNextNbytes(8))
                                 {
                                     size(8);
                                     stuffs.Add(formatPair(".quad", string.Format("0x{0:X16}", Utilities.ReadU32(section.Data, i))));
                                     i += 7;
                                 }
-                                else if (symbol.TypeHint.HasFlags(TypeHint.Single))
+                                else if (symbol.TypeHint.HasFlags(TypeHint.Single) && checkNoSymbolsForNextNbytes(4))
                                 {
                                     size(4);
 
@@ -721,7 +726,7 @@ namespace MipsSharp.Zelda64
 
                                     i += 3;
                                 }
-                                else if (symbol.TypeHint.HasFlags(TypeHint.Double))
+                                else if (symbol.TypeHint.HasFlags(TypeHint.Double) && checkNoSymbolsForNextNbytes(8))
                                 {
                                     size(8);
 
