@@ -19,9 +19,11 @@ namespace MipsSharp.Nintendo64
         public static ImmutableArray<string> GetCommonLines(IEnumerable<string> input) =>
             input
                 .TakeWhile(x => 
-                    string.IsNullOrWhiteSpace(x) || 
+                    (string.IsNullOrWhiteSpace(x) || 
                     x.Trim().StartsWith("#") || 
-                    x.Trim().StartsWith(".set"))
+                    x.Trim().StartsWith(".")) &&
+                    !x.Trim().StartsWith(".ram_origin") &&
+                    !x.Trim().StartsWith(".rom_origin"))
                 .ToImmutableArray();
 
         public class Chunk
