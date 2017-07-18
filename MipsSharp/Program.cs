@@ -414,7 +414,7 @@ namespace MipsSharp
 
                                     File.WriteAllText(
                                         Path.Combine(p, "Makefile"),
-                                        OverlayCreator.GenerateMakefileForOvl("../..", o.File.Name, o.VmaStart)
+                                        OverlayCreator.GenerateMakefileForOvl(AppContext.BaseDirectory, o.File.Name, o.VmaStart)
                                     );
 
                                     File.WriteAllBytes(
@@ -490,6 +490,8 @@ namespace MipsSharp
                         _asmPatchOptions.Parse(extra);
 
                         var config = Toolchain.Configuration.FromEnvironment();
+
+                        config.CFLAGS += $" \"-I{AppContext.BaseDirectory}/dist\"";
 
 
                         if (Verbosity > 0)

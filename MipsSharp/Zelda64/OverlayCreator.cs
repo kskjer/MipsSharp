@@ -100,20 +100,23 @@ namespace MipsSharp.Zelda64
             return relContents;
         }
 
+        private static string MakefileEscape(string s) =>
+            s.Replace(" ", "\\ ");
+
         public static string GenerateMakefileForOvl(string mipsSharpPath, string ovlName, UInt32 ovlEntryPoint)
         {
             return string.Join(
                 Environment.NewLine,
                 new[]
                 {
-                   $"MIPSSHARP_PATH = {mipsSharpPath}",
+                   $"MIPSSHARP_PATH = {MakefileEscape(mipsSharpPath)}",
                     "",
                    $"OVL_ADDR = 0x{ovlEntryPoint.ToString("X8")}",
                    $"OVL_NAME = {ovlName}",
                     "PARTS    = $(OVL_NAME).o",
                     "TARGET   = $(OVL_NAME).elf",
                     "",
-                    "include ../../dist/z64-ovl.mk"
+                   $"include {MakefileEscape(mipsSharpPath)}/dist/z64-ovl.mk"
                 }
             );
         }

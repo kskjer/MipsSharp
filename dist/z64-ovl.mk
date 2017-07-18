@@ -4,7 +4,7 @@ CPP = mips-elf-cpp
 LD  = mips-elf-ld
 OBJCOPY = mips-elf-objcopy
 
-MIPSSHARP = dotnet exec $(MIPSSHARP_PATH)/MipsSharp/bin/Release/netcoreapp1.1/MipsSharp.dll
+MIPSSHARP = dotnet exec $(MIPSSHARP_PATH)/MipsSharp.dll
 
 DIST_DIR = $(MIPSSHARP_PATH)/dist
 
