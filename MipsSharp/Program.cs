@@ -30,7 +30,8 @@ namespace MipsSharp
             Zelda64,
             ShowHelp,
             JekyllGen,
-            EucJpStrings
+            EucJpStrings,
+            AsmPatch
         }
 
         enum ZeldaMode
@@ -69,8 +70,16 @@ namespace MipsSharp
             public static int? MinStringLength;
         }
 
+        private class AsmPatchOptions
+        {
+            public static string PatchSource;
+            public static string OutputRom;
+            public static string InputRom;
+        }
+
         static readonly OptionSet _operatingModes = new OptionSet
         {
+            { "asm-patch"        , "Assemble patch and apply to ROM",                v => _mode = Mode.AsmPatch          },
             { "eucjp-strings"    , "Find and dump EUC-JP encoded strings in input",  v => _mode = Mode.EucJpStrings     },
             { "import-signatures", "Import function signatures from .a file",        v => _mode = Mode.ImportSignatures },
             { "jekyll-gen"       , "Generate Jekyll collections",                    v => _mode = Mode.JekyllGen        },
@@ -80,6 +89,14 @@ namespace MipsSharp
         };
 
         static readonly Overlay.Options _overlayOptions = new Overlay.Options();
+
+        static int Verbosity;
+
+        static readonly OptionSet _globalOptions = new OptionSet
+        {
+            { "v", "Increase verbosity", v => Verbosity++ },
+        };
+
 
         static readonly OptionSet _signatureOptions = new OptionSet
         {
@@ -116,6 +133,13 @@ namespace MipsSharp
             { "json", "Output results as JSON", v => EucJpOptions.Json = true },
             { "only-foreign", "Only show strings that have EUC-JP chars", v => EucJpOptions.OnlyForeign = true },
             { "min-length=", "Minimum length of strings to display", v => EucJpOptions.MinStringLength = int.Parse(v) }
+        };
+
+        static readonly OptionSet _asmPatchOptions = new OptionSet
+        {
+            { "i|input=", "Input ROM", v => AsmPatchOptions.InputRom = v },
+            { "o|output=", "Output ROM", v => AsmPatchOptions.OutputRom = v },
+            { "s|source=", "Source code of patch (should be MIPS assembly)", v => AsmPatchOptions.PatchSource = v }
         };
 
         static void MainSignatures(string[] args)
@@ -159,7 +183,7 @@ namespace MipsSharp
         {
             Console.OutputEncoding = Encoding.UTF8;
 
-            var extra = _operatingModes.Parse(args);
+            var extra = _globalOptions.Parse(_operatingModes.Parse(args));
 
             switch(_mode)
             {
@@ -169,6 +193,10 @@ namespace MipsSharp
 
                     Console.WriteLine("The application supports the following modes:");
                     _operatingModes.WriteOptionDescriptions(Console.Out);
+                    
+                    Console.WriteLine();
+                    Console.WriteLine("Global options:");
+                    _globalOptions.WriteOptionDescriptions(Console.Out);
 
                     Console.WriteLine();
                     Console.WriteLine("Options for identifying function signatures:");
@@ -189,6 +217,10 @@ namespace MipsSharp
                     Console.WriteLine();
                     Console.WriteLine("Options for EUC-JP string identification:");
                     _eucJpOptions.WriteOptionDescriptions(Console.Out);
+
+                    Console.WriteLine();
+                    Console.WriteLine("Options for assembly patches:");
+                    _asmPatchOptions.WriteOptionDescriptions(Console.Out);
                     break;
 
                 case Mode.Signatures:
@@ -450,6 +482,37 @@ namespace MipsSharp
                                 )
                             );
                         }
+                    }
+                    break;
+
+                case Mode.AsmPatch:
+                    {
+                        _asmPatchOptions.Parse(extra);
+
+                        var config = Toolchain.Configuration.FromEnvironment();
+
+
+                        if (Verbosity > 0)
+                            config.CommandDebugger = Console.Error.WriteLine;
+                        var assembled = RomAssembler.AssembleSource(config, File.ReadAllText(AsmPatchOptions.PatchSource)).ToArray();
+                        var input = File.ReadAllBytes(AsmPatchOptions.InputRom);
+
+                        foreach (var a in assembled)
+                            Utilities.WriteU32(a.Instruction, input, (int)a.RomAddress);
+
+                        Rom.ApplyCrcs(input, Rom.RecalculateCrc(input));
+
+                        File.WriteAllBytes(AsmPatchOptions.OutputRom, input);
+
+                        if (Verbosity > 1)
+                        {
+                            Console.Error.WriteLine("Raw dump of patched values:");
+
+                            foreach (var x in assembled)
+                                Console.Error.WriteLine("  " + x);
+                        }
+
+                        Console.Error.WriteLine("Patched {0} bytes.", assembled.Length * 4);
                     }
                     break;
 
