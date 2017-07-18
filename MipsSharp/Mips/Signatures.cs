@@ -10,7 +10,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
-using static MipsSharp.Mips.EnumerableInstructionExtensions;
+using static MipsSharp.EnumerableInstructionExtensions;
 
 namespace MipsSharp.Mips
 {

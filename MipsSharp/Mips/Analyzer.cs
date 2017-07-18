@@ -81,7 +81,7 @@ namespace MipsSharp.Mips
 
             public Value Previous { get; set; }
             public Value Next { get; set; }
-#warning make abstract
+            // TODO: Make abstract
             public virtual void UpdateReferences(Analyzer a) { }
 
             protected static int CombineHashCode(params object[] objs) =>

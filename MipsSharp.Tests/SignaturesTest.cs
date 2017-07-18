@@ -1,5 +1,6 @@
 ﻿using System;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using MipsSharp;
 using MipsSharp.Mips;
 using System.Linq;
 using static MipsSharp.Mips.SignatureDatabase;
@@ -15,7 +16,10 @@ namespace MipsSharp.Tests
         {
             return;
 
+// Unreachable code detected
+#pragma warning disable CS0162
             var signatures = new SignatureDatabase(@"..\..\..\signatures.db");
+#pragma warning restore CS0162 
 
             var toCompare = signatures.Imports
                 .SelectMany(i => i.Variants)

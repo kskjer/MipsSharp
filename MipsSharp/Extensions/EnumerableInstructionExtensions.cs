@@ -2,8 +2,9 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using MipsSharp.Mips;
 
-namespace MipsSharp.Mips
+namespace MipsSharp
 {
     public static class EnumerableInstructionExtensions
     {
@@ -319,7 +320,6 @@ namespace MipsSharp.Mips
             var haveHi16 = new bool[32];
             var hi16Index = new int[32];
 
-            Action reset = null;
             Action pendingAction = null;
 
 
