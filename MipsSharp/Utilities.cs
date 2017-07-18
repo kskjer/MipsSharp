@@ -36,6 +36,14 @@ namespace MipsSharp
             return result;
         }
 
+        public static void WriteU32(UInt32 word, IList<byte> target, int pos)
+        {
+            target[pos + 0] = (byte)(word >> 24);
+            target[pos + 1] = (byte)(word >> 16);
+            target[pos + 2] = (byte)(word >> 8);
+            target[pos + 3] = (byte)(word >> 0);
+        }
+
         public static DateTime UnixTimeStampToDateTime(double unixTimeStamp)
         {
             // Unix timestamp is seconds past epoch
