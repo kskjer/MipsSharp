@@ -348,7 +348,7 @@ namespace MipsSharp.Mips
             var existing = File.Exists(dbPath);
             var stats = new ImportStats();
 
-            using (var db = new SqliteConnection($"Data Source={dbPath};Version=3;"))
+            using (var db = new SqliteConnection($"Data Source={dbPath}"))
             {
                 if (!existing)
                     db.Execute(_sqlSchema);
@@ -502,7 +502,7 @@ namespace MipsSharp.Mips
 
         public SignatureDatabase(string dbPath)
         {
-            using (var db = new SqliteConnection($"Data Source={dbPath};Version=3;"))
+            using (var db = new SqliteConnection($"Data Source={dbPath}"))
             {
                 var masks        = db.Query<sqlMask>       ("SELECT * FROM masks");
                 var instructions = db.Query<sqlInstruction>("SELECT * FROM instructions");
