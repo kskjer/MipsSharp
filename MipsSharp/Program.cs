@@ -410,7 +410,7 @@ namespace MipsSharp
                                             "ID      Sec. loc   Abs. addr    Sym value   Type        Section       Disassembly",
                                             //"    0  [0x0000001C/0x808FDEAC] (0x8090EE50) R_MIPS_HI16 .text         lui         $at,0x8091"
                                         }.Concat(
-                                            new Overlay(Convert.ToUInt32(files[1], 16), File.ReadAllBytes(files[0]))
+                                            LoadOverlay(files)
                                                 .Relocations
                                                 .Select((x, i) => string.Format("{0,5}  {1}", i, x))
                                         )
@@ -458,11 +458,21 @@ namespace MipsSharp
             }
         }
 
+        private static Overlay LoadOverlay(IReadOnlyList<string> args, Overlay.Options options = null)
+        {
+            var contents = File.ReadAllBytes(args[0]);
+
+            var entryPoint = args.Count >= 2
+                ? Convert.ToUInt32(args[1], 16)
+                : Overlay.InferEntryPoint(contents);
+
+            return new Overlay(entryPoint, contents, options);
+        }
 
         static void MainDis(string[] args)
         {
             var file = File.ReadAllBytes(args[0]);
-            var test = new Overlay(Convert.ToUInt32(args[1], 16), file, _overlayOptions);
+            var test = LoadOverlay(args, _overlayOptions);
 
             var disasm = new Disassembler(new DefaultDisassemblyFormatter(test.Symbols));
 

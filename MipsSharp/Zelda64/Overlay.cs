@@ -886,5 +886,20 @@ namespace MipsSharp.Zelda64
 
             return true;
         }
+
+        public static UInt32 InferEntryPoint(IReadOnlyList<byte> overlay) =>
+            InferEntryPointFromRelocs(
+                new Overlay(0, overlay)
+                    .Relocations
+                    .Select(r => (r.Type, r.Address))
+            );
+
+        public static UInt32 InferEntryPointFromRelocs(IEnumerable<(RelocationType relocType, UInt32 symValue)> relocs) =>
+            relocs
+                .Where(x => x.relocType == RelocationType.R_MIPS_26 || x.relocType == RelocationType.R_MIPS_32)
+                // JAL/J does not contain the upper 4 bits of the address, but it is always 8 for overlays
+                .Select(x => x.symValue | 0x80000000)
+                .OrderBy(x => x)
+                .First();
     }
 }
