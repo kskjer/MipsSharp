@@ -2468,9 +2468,12 @@ namespace MipsSharp.Mips
             };
         }
 
-        public DisassemblerOutput Disassemble(UInt32 pc, Instruction insn) =>
+        private DisassemblerOutput DisassembleInternal(UInt32 pc, Instruction insn) =>
             insn == 0
             ? new DisassemblerOutput("nop")
             : _interpreter.Execute(pc, insn);
+
+        public DisassemblerOutput Disassemble(UInt32 pc, Instruction insn) =>
+            DisassembleInternal(pc, insn) ?? new DisassemblerOutput(string.Format("0x{0:X8}", insn.Word));
     }
 }
