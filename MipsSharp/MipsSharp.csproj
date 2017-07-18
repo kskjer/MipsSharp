@@ -17,7 +17,23 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Folder Include="dist\" />
     <Folder Include="Properties\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\dist\mips.h" Link="dist\mips.h">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\dist\verify-rom.sh" Link="dist\verify-rom.sh">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\dist\z64-ovl.ld" Link="dist\z64-ovl.ld">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\dist\z64-ovl.mk" Link="dist\z64-ovl.mk">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>
