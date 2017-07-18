@@ -31,7 +31,7 @@ default: $(OVL_NAME).ovl
 	$(OBJCOPY) -O binary $^ $@
 
 disasm-new.asm: $(OVL_NAME).ovl
-	$(MIPSSHARP) --zelda64 -D $(OVL_NAME).ovl $(OVL_ADDR) > disasm-new.asm
+	$(MIPSSHARP) --zelda64 -D $(OVL_NAME).ovl $(OVL_ADDR) > $@
 
 diff: disasm-new.asm $(OVL_NAME).S
 	vimdiff $^
@@ -43,6 +43,12 @@ bin-diff: $(OVL_NAME).ovl
 	xxd $(OVL_NAME).ovl > hex-new.hex
 	xxd $(OVL_NAME).ovl.orig > hex-orig.hex
 	vimdiff hex-new.hex hex-orig.hex
+
+disasm-without-ep.asm: 
+	$(MIPSSHARP) --zelda64 -D $(OVL_NAME).ovl > $@
+
+test-ep-infer: disasm-without-ep.asm
+	diff disasm-without-ep.asm $(OVL_NAME).S
 
 # Don't delete intermediate files
 .PRECIOUS: %.o %.elf
