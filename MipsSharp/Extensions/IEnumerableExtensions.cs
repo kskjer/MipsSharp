@@ -16,8 +16,8 @@ namespace MipsSharp
             }
         }
 
-        public static IReadOnlyList<T> GetSegment<T>(this IReadOnlyList<T> list, int start, int end) =>
-            new ListSegment<T>(list, start, end);
+        public static IReadOnlyList<T> GetSegment<T>(this IReadOnlyList<T> list, int start, int count) =>
+            new ListSegment<T>(list, start, count);
 
         public static IReadOnlyList<T> GetSegment<T>(this IReadOnlyList<T> list, int start) =>
             new ListSegment<T>(list, start, list.Count - start);
