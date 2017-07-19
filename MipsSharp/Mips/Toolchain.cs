@@ -126,7 +126,8 @@ namespace MipsSharp.Mips
                 .Replace("\\", "\\\\")
                 .Replace("\n", "\\n")
                 .Replace("\r", "\\r")
-                .Replace("'", "'\"'\"'") + "'";
+                .Replace("'", "'\"'\"'")
+                .Replace("%", "%%") + "'";
         }
         public static TemporaryFile Assemble(Configuration config, string source, IEnumerable<string> extraArgs = null)
         {
