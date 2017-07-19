@@ -44,6 +44,11 @@ namespace MipsSharp.Mips
             CREATE INDEX idx_variants ON variants(fingerprint_id DESC);
             COMMIT;";
 
+        /// <remarks>
+        /// SQLite on .NET core has some issues with relative paths.
+        /// </remarks>
+        private static string GetConnectionString(string dbPath) =>
+            $"Data Source={Path.GetFullPath(dbPath)}";
 
         public class ImportStats
         {
@@ -348,7 +353,7 @@ namespace MipsSharp.Mips
             var existing = File.Exists(dbPath);
             var stats = new ImportStats();
 
-            using (var db = new SqliteConnection($"Data Source={dbPath}"))
+            using (var db = new SqliteConnection(GetConnectionString(dbPath)))
             {
                 if (!existing)
                     db.Execute(_sqlSchema);
@@ -502,7 +507,7 @@ namespace MipsSharp.Mips
 
         public SignatureDatabase(string dbPath)
         {
-            using (var db = new SqliteConnection($"Data Source={dbPath}"))
+            using (var db = new SqliteConnection(GetConnectionString(dbPath)))
             {
                 var masks        = db.Query<sqlMask>       ("SELECT * FROM masks");
                 var instructions = db.Query<sqlInstruction>("SELECT * FROM instructions");
