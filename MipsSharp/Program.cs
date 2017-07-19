@@ -17,6 +17,7 @@ using System.Threading.Tasks;
 using YamlDotNet.Serialization;
 using static MipsSharp.Mips.SignatureDatabase;
 using System.Reflection;
+using System.Globalization;
 
 namespace MipsSharp
 {
@@ -167,6 +168,8 @@ namespace MipsSharp
         {
             try
             {
+                CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
+
                 MainReal(args);
             }
             catch (Exception e)

@@ -3,6 +3,7 @@ using MipsSharp.Sys;
 using MipsSharp.Zelda64;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 
@@ -11,6 +12,11 @@ namespace MipsSharp.Tests
     [TestClass]
     public class FloatTests
     {
+        public FloatTests()
+        {
+            CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
+        }
+
         [TestMethod]
         public void TestRegexApproximation()
         {
