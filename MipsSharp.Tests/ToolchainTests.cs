@@ -23,5 +23,11 @@ namespace MipsSharp.Tests
                 );
             }
         }
+
+        [TestMethod]
+        public void TestDefaultPrefix()
+        {
+            Assert.AreEqual("mips-elf-ld", Toolchain.Configuration.FromEnvironment().LdPath);
+        }
     }
 }

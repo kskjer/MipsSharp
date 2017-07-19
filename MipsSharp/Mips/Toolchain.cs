@@ -28,26 +28,41 @@ namespace MipsSharp.Mips
     {
         public class Configuration
         {
-            public string AsPath { get; set; } = "mips-elf-as";
-            public string CcPath { get; set; } = "mips-elf-gcc";
-            public string LdPath { get; set; } = "mips-elf-ld";
-            public string ObjcopyPath { get; set; } = "mips-elf-objcopy";
+            private const string DefaultPrefix = "mips-elf-";
+
+            public string AsPath { get; set; }
+            public string CcPath { get; set; }
+            public string LdPath { get; set; }
+            public string ObjcopyPath { get; set; }
 
             public string CFLAGS { get; set; }
             public string LDFLAGS { get; set; }
 
             public Action<string> CommandDebugger { get; set; }
 
+            public Configuration()
+                : this(DefaultPrefix)
+            {
+
+            }
+
+            private Configuration(string prefix)
+            {
+                AsPath = $"{prefix}as";
+                CcPath = $"{prefix}gcc";
+                LdPath = $"{prefix}ld";
+                ObjcopyPath = $"{prefix}objcopy";
+            }
+
             public static Configuration FromEnvironment()
             {
                 var prefix = Environment.GetEnvironmentVariable("MIPS_TOOLCHAIN_PREFIX");
 
-                return new Configuration
+                if (string.IsNullOrWhiteSpace(prefix))
+                    prefix = DefaultPrefix;
+
+                return new Configuration(prefix)
                 {
-                    AsPath = $"{prefix}as",
-                    CcPath = $"{prefix}gcc",
-                    LdPath = $"{prefix}ld",
-                    ObjcopyPath = $"{prefix}objcopy",
                     CFLAGS = Environment.GetEnvironmentVariable("MIPS_CFLAGS"),
                     LDFLAGS = Environment.GetEnvironmentVariable("MIPS_LDFLAGS"),
                 };
