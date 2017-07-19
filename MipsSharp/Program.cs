@@ -14,7 +14,6 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using YamlDotNet.Serialization;
 using static MipsSharp.Mips.SignatureDatabase;
 using System.Reflection;
 using System.Globalization;
@@ -31,7 +30,6 @@ namespace MipsSharp
             ImportSignatures,
             Zelda64,
             ShowHelp,
-            JekyllGen,
             EucJpStrings,
             AsmPatch
         }
@@ -86,7 +84,6 @@ namespace MipsSharp
             { "asm-patch"        , "Assemble patch and apply to ROM",                v => _mode = Mode.AsmPatch          },
             { "eucjp-strings"    , "Find and dump EUC-JP encoded strings in input",  v => _mode = Mode.EucJpStrings     },
             { "import-signatures", "Import function signatures from .a file",        v => _mode = Mode.ImportSignatures },
-            { "jekyll-gen"       , "Generate Jekyll collections",                    v => _mode = Mode.JekyllGen        },
             { "signatures"       , "Identify function signatures",                   v => _mode = Mode.Signatures       },
             { "zelda64"          , "Operations pertaining to Zelda 64 ROMs",         v => _mode = Mode.Zelda64          },
             { "help"             , "Show this message and exit",                     v => _mode = Mode.ShowHelp         },
@@ -269,120 +266,6 @@ namespace MipsSharp
 
                     Console.Error.WriteLine("{0} imported, {1} variants already present, {2} archives already present", stats.CountImported, stats.CountExisting, stats.ArchivesExisting);
 
-                    break;
-
-                case Mode.JekyllGen:
-                    {
-                        var sigs = new SignatureDatabase(SignaturesOptions.DatabasePath);
-
-                        var which = new DirectoryInfo(@"Z:\[N64]\Extracted")
-                            .EnumerateFiles()
-                            .OrderBy(f => f.Name)
-                            .Where(f => f.Name.ToLower().EndsWith(".z64") && f.Name.ToLower().Contains("zelda"));
-
-                        var source = new DirectoryInfo(@"Z:\[N64]\Extracted")
-                            .EnumerateFiles()
-                            .OrderBy(f => f.Name)
-                            .Where(f => f.Name.ToLower().EndsWith(".z64"))
-                            .Select(f => { Console.Error.WriteLine("{0}...", f.Name); return f; })
-                            .Select(f => new Rom(f.FullName))
-                            .Select(r => new {
-                                Name = Path.GetFileNameWithoutExtension(r.FilePath),
-                                Header = new {
-                                    ImageName = r.Header.Name.Trim(),
-                                    EntryPoint = string.Format("0x{0:X8}", r.Header.EntryPoint),
-                                    Crc = string.Format("{0:X8} {1:X2}", r.Header.Crc[0], r.Header.Crc[1])
-                                },
-                                Signatures = sigs.IdentifySlow(r.GetExecutable()).ToShortForm()
-                                        .Select(g => new { Address = string.Format("0x{0:x8}", g.Key), Sym = g.Value.ToArray() })
-                                        .ToArray()
-                            });
-
-                        var opts = new ParallelOptions
-                        {
-                            MaxDegreeOfParallelism = Convert.ToInt32(Math.Ceiling((Environment.ProcessorCount * 0.75) * 1.0))
-                        };
-
-                        var output = new SortedList<string, object>();
-
-                        Parallel.ForEach(
-                            which.Select(w => w.FullName),
-                            opts,
-                            (path) =>
-                            {
-                                Console.Error.WriteLine("{0}...", Path.GetFileName(path));
-
-                                try
-                                {
-                                    var r = new Rom(path);
-
-                                    var result = new
-                                    {
-                                        Name = Path.GetFileNameWithoutExtension(r.FilePath),
-                                        Header = new
-                                        {
-                                            ImageName = r.Header.Name.Trim(),
-                                            EntryPoint = string.Format("0x{0:X8}", r.Header.EntryPoint),
-                                            Crc = string.Format("{0:X8} {1:X2}", r.Header.Crc[0], r.Header.Crc[1])
-                                        },
-                                        Signatures = sigs.IdentifySlow(r.GetExecutable()).ToShortForm()
-                                            .OrderBy(s => s.Key)
-                                            .Select(g => new { Address = string.Format("0x{0:x8}", g.Key), Sym = g.Value.ToArray() })
-                                            .ToArray()
-                                    };
-
-                                    if (path.ToLower().Contains("zelda"))
-                                    {
-                                        var zrom = new Z64Rom(r);
-
-                                        var result2 = new
-                                        {
-                                            result.Name,
-                                            result.Header,
-                                            result.Signatures,
-                                            Zelda = new
-                                            {
-                                                Files = zrom.Files
-                                                    .Select(f => new {
-                                                        f.Name,
-                                                        f.PhysicalEnd,
-                                                        f.PhysicalStart,
-                                                        f.PhysicalSize,
-                                                        f.VirtualEnd,
-                                                        f.VirtualStart,
-                                                        f.Size,
-                                                        f.Type
-                                                    }),
-                                                Overlays = zrom.Overlays
-                                                    .Select(o => new {
-                                                        o.VirtualStart,
-                                                        o.VirtualEnd,
-                                                        o.VmaStart,
-                                                        o.VmaEnd
-                                                    })
-                                            }
-                                        };
-
-                                        lock (output)
-                                            output.Add(path, result2);
-                                    }
-                                    else
-                                    { 
-                                        lock (output)
-                                            output.Add(path, result);
-                                    }
-                                }
-                                catch(Exception e )
-                                {
-                                    Console.Error.WriteLine(
-                                        new Exception($"Error while processing \"{path}\"", e)
-                                    );
-                                }
-                            }
-                        );
-
-                        Console.WriteLine(JsonConvert.SerializeObject(output.Values));
-                    }
                     break;
 
                 case Mode.Zelda64:
