@@ -23,6 +23,15 @@ namespace MipsSharp
 {
     class Program
     {
+        private class CliException : Exception
+        {
+            public CliException(string message)
+                : base(message)
+            {
+
+            }
+        }
+
         enum Mode
         {
             NotSet = 0,
@@ -173,6 +182,12 @@ namespace MipsSharp
                 CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
 
                 MainReal(args);
+            }
+            catch (CliException e)
+            {
+                Console.Error.WriteLine(e.Message);
+
+                return -1;
             }
             catch (Exception e)
             {
@@ -433,6 +448,21 @@ namespace MipsSharp
             }
         }
 
+        private static bool _alreadyUsedStdin = false;
+
+        private static string ReadAllText(string pathFromCli)
+        {
+            if (pathFromCli != "-")
+                return File.ReadAllText(pathFromCli);
+
+            if (_alreadyUsedStdin)
+                throw new CliException("Can't use stdin as an input argument more than once.");
+
+            _alreadyUsedStdin = true;
+
+            return Console.In.ReadToEnd();
+        }
+
         private static AssembledInstruction[] BuildAsmPatch()
         {
             var config = Toolchain.Configuration.FromEnvironment();
@@ -444,7 +474,7 @@ namespace MipsSharp
 
             return RomAssembler.AssembleSource(
                 config,
-                File.ReadAllText(AsmPatchOptions.PatchSource),
+                ReadAllText(AsmPatchOptions.PatchSource),
                 new AssembleSourceOptions
                 {
                     PreserveElfAt = AsmPatchOptions.ElfLocation
