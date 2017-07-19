@@ -1,4 +1,5 @@
 ﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
+using MipsSharp.Host;
 using MipsSharp.Mips;
 using MipsSharp.Nintendo64;
 using System;

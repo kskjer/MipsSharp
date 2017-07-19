@@ -76,6 +76,7 @@ namespace MipsSharp
             public static string PatchSource;
             public static string OutputRom;
             public static string InputRom;
+            public static string ElfLocation;
         }
 
         static readonly OptionSet _operatingModes = new OptionSet
@@ -140,6 +141,7 @@ namespace MipsSharp
         {
             { "i|input=", "Input ROM", v => AsmPatchOptions.InputRom = v },
             { "o|output=", "Output ROM", v => AsmPatchOptions.OutputRom = v },
+            { "e|elf=", "Write resulting ELF file here after linking. This can be useful for debugging.", v => AsmPatchOptions.ElfLocation = v },
             { "s|source=", "Source code of patch (should be MIPS assembly)", v => AsmPatchOptions.PatchSource = v }
         };
 
@@ -497,9 +499,18 @@ namespace MipsSharp
                         config.CFLAGS += $" \"-I{AppContext.BaseDirectory}/dist\"";
 
 
-                        if (Verbosity > 0)
+                        if (Verbosity > 1)
                             config.CommandDebugger = Console.Error.WriteLine;
-                        var assembled = RomAssembler.AssembleSource(config, File.ReadAllText(AsmPatchOptions.PatchSource)).ToArray();
+
+                        var assembled = RomAssembler.AssembleSource(
+                            config, 
+                            File.ReadAllText(AsmPatchOptions.PatchSource),
+                            new RomAssembler.AssembleSourceOptions
+                            {
+                                PreserveElfAt = AsmPatchOptions.ElfLocation
+                            }
+                        ).ToArray();
+
                         var input = File.ReadAllBytes(AsmPatchOptions.InputRom);
 
                         foreach (var a in assembled)
@@ -509,12 +520,21 @@ namespace MipsSharp
 
                         File.WriteAllBytes(AsmPatchOptions.OutputRom, input);
 
-                        if (Verbosity > 1)
+                        if (Verbosity > 0)
                         {
                             Console.Error.WriteLine("Raw dump of patched values:");
 
-                            foreach (var x in assembled)
-                                Console.Error.WriteLine("  " + x);
+                            var lines = assembled
+                                .SelectWithNext(
+                                    (cur, next) =>
+                                        next != null && next.RamAddress - cur.RamAddress > 4
+                                        ? new[] { $"    {cur}", "--" }
+                                        : new[] { $"    {cur}" }
+                                )
+                                .SelectMany(x => x);
+
+                            foreach (var x in lines)
+                                Console.Error.WriteLine(x);
                         }
 
                         Console.Error.WriteLine("Patched {0} bytes.", assembled.Length * 4);

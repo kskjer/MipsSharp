@@ -5,6 +5,8 @@ using System.Collections.Immutable;
 using System.Text;
 using System.Text.RegularExpressions;
 using MipsSharp.Mips;
+using MipsSharp.Host;
+using System.IO;
 
 namespace MipsSharp.Nintendo64
 {
@@ -86,17 +88,48 @@ namespace MipsSharp.Nintendo64
                 string.Format("0x{0:X8} 0x{1:X8} {2}", RomAddress, RamAddress, Instruction);
         }
 
-        public static IEnumerable<AssembledInstruction> AssembleSource(Toolchain.Configuration tcConfig, string source) =>
-            GetChunksWithCommon(source)
-                .SelectMany(x =>
+        public class AssembleSourceOptions
+        {
+            public string PreserveElfAt { get; set; }
+        }
+
+        public static IEnumerable<AssembledInstruction> AssembleSource(Toolchain.Configuration tcConfig, string source, AssembleSourceOptions options = null)
+        {
+            var assembled = GetChunksWithCommon(source)
+                .Select(x => new
                 {
-                    using (var asmObj = Toolchain.Assemble(tcConfig, x.Assembly))
-                    using (var elf = Toolchain.Link(tcConfig, new[] { asmObj.Path }, Toolchain.GenerateLinkerScript(x.RamAddress)))
-                    {
-                        return Toolchain.ToBinary(tcConfig, elf.Path, new[] { "--remove-section", ".MIPS.abiflags" })
-                            .ToInstructions()
-                            .Select((y, i) => new AssembledInstruction(x.RomAddress + (uint)i * 4, x.RamAddress + (uint)i * 4, y));
-                    }
-                });
+                    x.Assembly,
+                    x.RomAddress,
+                    x.RamAddress,
+                    Out = Toolchain.Assemble(tcConfig, x.Assembly)
+                })
+                .ToArray();
+
+            var linkerParts = assembled.Select(x => (x.Out.Path, x.RamAddress));
+            var linkerDetails = Toolchain.GenerateLinkerScript(linkerParts);
+
+            using (var elf = Toolchain.Link(tcConfig, new[] { "-q" }, linkerDetails.script))
+            {
+                try
+                {
+                    return linkerDetails.chunkFilter
+                        .Zip(assembled, (filter, asm) => new { filter, asm.RamAddress, asm.RomAddress })
+                        .SelectMany(x =>
+                            Toolchain.ToBinary(tcConfig, elf.Path, x.filter.SelectMany(y => new[] { "-j", y }))
+                                .ToInstructions()
+                                .Select((y, i) => new AssembledInstruction(x.RomAddress + (uint)i * 4, x.RamAddress + (uint)i * 4, y))
+                        )
+                        .ToArray();
+                }
+                finally
+                {
+                    foreach (var x in assembled)
+                        x.Out.Dispose();
+
+                    if (options?.PreserveElfAt != null)
+                        File.Copy(elf.Path, options.PreserveElfAt, true);
+                }
+            }
+        }
     }
 }

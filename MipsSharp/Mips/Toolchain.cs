@@ -220,5 +220,50 @@ namespace MipsSharp.Mips
                 .rodata : { *(.rodata) *(.rodata.*) }
                 .bss (NOLOAD) : { *(.bss) *(.sbss) *(.scommon) }
             };";
+
+        public static (string script, IEnumerable<string[]> chunkFilter) GenerateLinkerScript(IEnumerable<(string path, UInt32 entryPoint)> parts)
+        {
+            var tmp = parts.ToArray();
+            var sections = new[] { ".text", ".data", ".rodata", ".bss" };
+
+            string hexAddr(UInt32 x) =>
+                "0x" + x.ToString("X8");
+
+            IEnumerable<string> makeParts() =>
+                tmp
+                    .SelectMany((x, i) =>
+                        new[] { $". = {hexAddr(x.entryPoint)};" }
+                            .Concat(
+                                sections.Select(y => $".chunk{i}{y.PadRight(sections.Max(z => z.Length))} : {{ KEEP(\"{x.path}\"({y} {y}.*)); }}")
+                            )
+                    );
+
+            var script = string.Join(
+                Environment.NewLine,
+                new[]
+                {
+                    "OUTPUT_ARCH( mips )",
+                    "OUTPUT_FORMAT( \"elf32-bigmips\" )",
+                    "",
+                   $"ENTRY_POINT = {hexAddr(tmp[0].entryPoint)};",
+                    "",
+                    "ENTRY( ENTRY_POINT )",
+                    "",
+                    "SECTIONS",
+                    "{",
+                    string.Join(
+                        Environment.NewLine,
+                        makeParts()
+                            .Select(x => $"    {x}")
+                    ),
+                    "}"
+                }
+            );
+
+            return (
+                script,
+                tmp.Select((x, i) => sections.Select(y => $".chunk{i}{y}").ToArray()).ToArray()
+            );
+        }
     }
 }
