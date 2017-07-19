@@ -18,6 +18,7 @@ using YamlDotNet.Serialization;
 using static MipsSharp.Mips.SignatureDatabase;
 using System.Reflection;
 using System.Globalization;
+using static MipsSharp.Nintendo64.RomAssembler;
 
 namespace MipsSharp
 {
@@ -77,6 +78,7 @@ namespace MipsSharp
             public static string OutputRom;
             public static string InputRom;
             public static string ElfLocation;
+            public static bool Gameshark;
         }
 
         static readonly OptionSet _operatingModes = new OptionSet
@@ -140,6 +142,7 @@ namespace MipsSharp
         static readonly OptionSet _asmPatchOptions = new OptionSet
         {
             { "i|input=", "Input ROM", v => AsmPatchOptions.InputRom = v },
+            { "g|gameshark", "Build Gameshark code instead of writing to ROM", v => AsmPatchOptions.Gameshark = true },
             { "o|output=", "Output ROM", v => AsmPatchOptions.OutputRom = v },
             { "e|elf=", "Write resulting ELF file here after linking. This can be useful for debugging.", v => AsmPatchOptions.ElfLocation = v },
             { "s|source=", "Source code of patch (should be MIPS assembly)", v => AsmPatchOptions.PatchSource = v }
@@ -494,56 +497,76 @@ namespace MipsSharp
                     {
                         _asmPatchOptions.Parse(extra);
 
-                        var config = Toolchain.Configuration.FromEnvironment();
+                        var assembled = BuildAsmPatch();
 
-                        config.CFLAGS += $" \"-I{AppContext.BaseDirectory}/dist\"";
-
-
-                        if (Verbosity > 1)
-                            config.CommandDebugger = Console.Error.WriteLine;
-
-                        var assembled = RomAssembler.AssembleSource(
-                            config, 
-                            File.ReadAllText(AsmPatchOptions.PatchSource),
-                            new RomAssembler.AssembleSourceOptions
-                            {
-                                PreserveElfAt = AsmPatchOptions.ElfLocation
-                            }
-                        ).ToArray();
-
-                        var input = File.ReadAllBytes(AsmPatchOptions.InputRom);
-
-                        foreach (var a in assembled)
-                            Utilities.WriteU32(a.Instruction, input, (int)a.RomAddress);
-
-                        Rom.ApplyCrcs(input, Rom.RecalculateCrc(input));
-
-                        File.WriteAllBytes(AsmPatchOptions.OutputRom, input);
-
-                        if (Verbosity > 0)
+                        if (!AsmPatchOptions.Gameshark)
                         {
-                            Console.Error.WriteLine("Raw dump of patched values:");
+                            var input = File.ReadAllBytes(AsmPatchOptions.InputRom);
 
-                            var lines = assembled
-                                .SelectWithNext(
-                                    (cur, next) =>
-                                        next != null && next.RamAddress - cur.RamAddress > 4
-                                        ? new[] { $"    {cur}", "--" }
-                                        : new[] { $"    {cur}" }
-                                )
-                                .SelectMany(x => x);
+                            foreach (var a in assembled)
+                                Utilities.WriteU32(a.Instruction, input, (int)a.RomAddress);
 
-                            foreach (var x in lines)
-                                Console.Error.WriteLine(x);
+                            Rom.ApplyCrcs(input, Rom.RecalculateCrc(input));
+
+                            File.WriteAllBytes(AsmPatchOptions.OutputRom, input);
+
+                            if (Verbosity > 0)
+                            {
+                                Console.Error.WriteLine("Raw dump of patched values:");
+
+                                var lines = assembled
+                                    .SelectWithNext(
+                                        (cur, next) =>
+                                            next != null && next.RamAddress - cur.RamAddress > 4
+                                            ? new[] { $"    {cur}", "--" }
+                                            : new[] { $"    {cur}" }
+                                    )
+                                    .SelectMany(x => x);
+
+                                foreach (var x in lines)
+                                    Console.Error.WriteLine(x);
+                            }
+
+                            Console.Error.WriteLine("Patched {0} bytes.", assembled.Length * 4);
                         }
+                        else
+                        {
+                            var codes = assembled
+                                .SelectMany(x => new[]
+                                {
+                                    (addr: x.RamAddress | 0x01000000,     hw: x.Instruction >> 16),
+                                    (addr: x.RamAddress | 0x01000000 + 2, hw: x.Instruction & 0xFFFF)
+                                })
+                                .ToArray();
 
-                        Console.Error.WriteLine("Patched {0} bytes.", assembled.Length * 4);
+                            foreach (var c in codes)
+                                Console.WriteLine("{0:X8} {1:X4}", c.addr, c.hw);
+                        }
                     }
                     break;
 
                 default:
                     goto case Mode.ShowHelp;
             }
+        }
+
+        private static AssembledInstruction[] BuildAsmPatch()
+        {
+            var config = Toolchain.Configuration.FromEnvironment();
+
+            config.CFLAGS += $" \"-I{AppContext.BaseDirectory}/dist\"";
+
+            if (Verbosity > 1)
+                config.CommandDebugger = Console.Error.WriteLine;
+
+            return RomAssembler.AssembleSource(
+                config,
+                File.ReadAllText(AsmPatchOptions.PatchSource),
+                new AssembleSourceOptions
+                {
+                    PreserveElfAt = AsmPatchOptions.ElfLocation
+                }
+            ).ToArray();
         }
 
         private static Overlay LoadOverlay(IReadOnlyList<string> args, Overlay.Options options = null)
