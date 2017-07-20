@@ -86,6 +86,7 @@ namespace MipsSharp
             public static string InputRom;
             public static string ElfLocation;
             public static bool Gameshark;
+            public static string BsdiffPath;
         }
 
         static readonly OptionSet _operatingModes = new OptionSet
@@ -150,6 +151,7 @@ namespace MipsSharp
             { "i|input=", "Input ROM", v => AsmPatchOptions.InputRom = v },
             { "g|gameshark", "Build Gameshark code instead of writing to ROM", v => AsmPatchOptions.Gameshark = true },
             { "o|output=", "Output ROM", v => AsmPatchOptions.OutputRom = v },
+            { "p|patch=", "Filename of BSDIFF patch to generate", v => AsmPatchOptions.BsdiffPath = v },
             { "e|elf=", "Write resulting ELF file here after linking. This can be useful for debugging.", v => AsmPatchOptions.ElfLocation = v },
             { "s|source=", "Source code of patch (should be MIPS assembly)", v => AsmPatchOptions.PatchSource = v }
         };
@@ -426,6 +428,14 @@ namespace MipsSharp
                             }
 
                             Console.Error.WriteLine("Patched {0} bytes.", assembled.Length * 4);
+
+                            if (string.IsNullOrWhiteSpace(AsmPatchOptions.BsdiffPath))
+                                break;
+
+                            using (var patchOutput = File.OpenWrite(AsmPatchOptions.BsdiffPath))
+                                deltaq.BsDiff.BsDiff.Create(File.ReadAllBytes(AsmPatchOptions.InputRom), input, patchOutput);
+
+                            Console.Error.WriteLine("`{0}` of size {1} bytes created.", AsmPatchOptions.BsdiffPath, new FileInfo(AsmPatchOptions.BsdiffPath).Length);
                         }
                         else
                         {
