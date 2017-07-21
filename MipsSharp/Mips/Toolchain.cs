@@ -266,5 +266,98 @@ namespace MipsSharp.Mips
                 tmp.Select((x, i) => sections.Select(y => $".chunk{i}{y}").ToArray()).ToArray()
             );
         }
+
+        public static (string script, IEnumerable<string[]> chunkFilter) GenerateLinkerScript(
+            IEnumerable<(string name, IEnumerable<string> path, UInt32 entryPoint, UInt32 loadAddress)> parts)
+        {
+            var tmp = parts.ToArray();
+            var sections = new[] { ".text", ".data", ".rodata", ".bss" };
+
+            string hexAddr(UInt32 x) =>
+                "0x" + x.ToString("X8");
+
+            IEnumerable<string> makeParts() =>
+                tmp
+                    .SelectMany((x, i) =>
+                        new[] { $". = {hexAddr(x.entryPoint)};" }
+                            .Concat(sections.SelectMany(y =>
+                            {
+                                var seccname = $".chunk{i}{y}";
+                                var z = y.TrimStart('.');
+
+                                var keep = string.Join(
+                                    " ",
+                                    x.path
+                                        .Select(w =>
+                                        {
+                                            var k = $"KEEP(\"{w}\"({y} {y}.*";
+
+                                            if (z == "bss")
+                                                k += " .sbss .scommon";
+
+                                            k += "));";
+
+                                            return k;
+                                        })
+                                );
+
+                                var loadAddr = string.Join(
+                                    " + ",
+                                    new[] { hexAddr(x.loadAddress) }
+                                    .Concat(sections
+                                        .TakeWhile(w => w != y)
+                                        .Select(w => $"SIZEOF(.chunk{i}{w})"))
+                                );
+
+                                loadAddr = $"AT({loadAddr})";
+
+                                if (z == "bss")
+                                    loadAddr = "";
+
+                                return new[]
+                                {
+                                    $"__{x.name}_{z}_start = .;",
+                                    z != "bss" ? $"__{x.name}_rom_{z}_start = LOADADDR({seccname});" : "",
+                                    $".chunk{i}{y.PadRight(sections.Max(w => w.Length))} : {loadAddr} {{ {keep} }}",
+                                    $"__{x.name}_{z}_end = .;",
+                                    z != "bss" ? $"__{x.name}_rom_{z}_end = __{x.name}_rom_{z}_start + SIZEOF({seccname});" : ""
+                                }
+                                .Where(w => !string.IsNullOrWhiteSpace(w));
+                            }))
+                    );
+
+            var script = string.Join(
+                Environment.NewLine,
+                new[]
+                {
+                    "OUTPUT_ARCH( mips )",
+                    "OUTPUT_FORMAT( \"elf32-bigmips\" )",
+                    "",
+                   $"ENTRY_POINT = {hexAddr(tmp[0].entryPoint)};",
+                    "",
+                    "ENTRY( ENTRY_POINT )",
+                    "",
+                    "SECTIONS",
+                    "{",
+                    string.Join(
+                        Environment.NewLine,
+                        makeParts()
+                            .Concat(
+                                new[]
+                                {
+                                    "\"/DISCARD/\": { *(.MIPS.abiflags); }"
+                                }
+                            )
+                            .Select(x => $"    {x}")
+                    ),
+                    "}"
+                }
+            );
+
+            return (
+                script,
+                tmp.Select((x, i) => sections.Select(y => $".chunk{i}{y}").ToArray()).ToArray()
+            );
+        }
     }
 }

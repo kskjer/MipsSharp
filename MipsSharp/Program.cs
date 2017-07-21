@@ -40,7 +40,8 @@ namespace MipsSharp
             Zelda64,
             ShowHelp,
             EucJpStrings,
-            AsmPatch
+            AsmPatch,
+            CreateProject
         }
 
         enum ZeldaMode
@@ -89,9 +90,18 @@ namespace MipsSharp
             public static string BsdiffPath;
         }
 
+        private class CreateProjectOptions
+        {
+            internal static string Type;
+            internal static string Rom;
+            internal static string Destination;
+            internal static string Name;
+        }
+
         static readonly OptionSet _operatingModes = new OptionSet
         {
-            { "asm-patch"        , "Assemble patch and apply to ROM",                v => _mode = Mode.AsmPatch          },
+            { "asm-patch"        , "Assemble patch and apply to ROM",                v => _mode = Mode.AsmPatch         },
+            { "create-project"   , "Set up Makefiles for mips-elf project",          v => _mode = Mode.CreateProject    },
             { "eucjp-strings"    , "Find and dump EUC-JP encoded strings in input",  v => _mode = Mode.EucJpStrings     },
             { "import-signatures", "Import function signatures from .a file",        v => _mode = Mode.ImportSignatures },
             { "signatures"       , "Identify function signatures",                   v => _mode = Mode.Signatures       },
@@ -154,6 +164,25 @@ namespace MipsSharp
             { "p|patch=", "Filename of BSDIFF patch to generate", v => AsmPatchOptions.BsdiffPath = v },
             { "e|elf=", "Write resulting ELF file here after linking. This can be useful for debugging.", v => AsmPatchOptions.ElfLocation = v },
             { "s|source=", "Source code of patch (should be MIPS assembly)", v => AsmPatchOptions.PatchSource = v }
+        };
+
+        static readonly OptionSet _createProjectOptions = new OptionSet
+        {
+            { "MipsSharp --create-project [FLAGS] [CHUNK SPECIFICATION]..." },
+            { "" },
+            { "This utility sets up a folder to contain a project. It sets up Makefiles and example sources." },
+            { "" },
+            { "The chunk specification has the following format: RAM address, ROM address, and chunk name. " +
+              "These should be written as a comma separated list. Each specification should be one argument. " +
+              "For example:" },
+            { "" },
+            { "  MipsSharp                       \\\n      --create-project            \\\n      --type=rom-hack             \\\n      --rom='Zelda64.z64'         \\\n      --destination=./new-folder  \\\n      0x80000400,0x00001000,hook  \\\n      0x800A8000,0x000A0000,main" },
+            { "" },
+            { "Options:" },
+            { "t|type=", "The type of project to create. Currently only `rom-hack' is supported.", v => CreateProjectOptions.Type = v },
+            { "r|rom=", "The path of the ROM to be patched, if ROM hack.", v => CreateProjectOptions.Rom = v },
+            { "d|destination=", "Target folder to place the project files in.", v => CreateProjectOptions.Destination = v },
+            { "n|name=", "Name of the project. Used in the generated files.", v => CreateProjectOptions.Name = v }
         };
 
         static void MainSignatures(string[] args)
@@ -243,6 +272,10 @@ namespace MipsSharp
                     Console.WriteLine();
                     Console.WriteLine("Options for assembly patches:");
                     _asmPatchOptions.WriteOptionDescriptions(Console.Out);
+
+                    Console.WriteLine();
+                    Console.WriteLine("Options for project creation:");
+                    _createProjectOptions.WriteOptionDescriptions(Console.Out);
                     break;
 
                 case Mode.Signatures:
@@ -449,6 +482,147 @@ namespace MipsSharp
 
                             foreach (var c in codes)
                                 Console.WriteLine("{0:X8} {1:X4}", c.addr, c.hw);
+                        }
+                    }
+                    break;
+
+                case Mode.CreateProject:
+                    {
+                        var chunks = _createProjectOptions.Parse(extra)
+                            .Select(x =>
+                            {
+                                var arr = x.Split(',');
+
+                                return (
+                                    ramAddress: Convert.ToUInt32(arr[0], 16),
+                                    romAddress: Convert.ToUInt32(arr[1], 16),
+                                    name: arr[2],
+                                    libs: arr.Skip(3)
+                                );
+                            })
+                            .ToArray();
+
+                        var dir = CreateProjectOptions.Destination;
+
+                        Directory.CreateDirectory(dir);
+
+                        switch (CreateProjectOptions.Type)
+                        {
+                            case "rom-hack":
+                                var mkfile = new[]
+                                {
+                                    "CC = mips-elf-gcc",
+                                    "LD = mips-elf-ld",
+                                    "",
+                                   $"CPPFLAGS = \"-I{Path.Combine(AppContext.BaseDirectory, "dist")}\"",
+                                    "ASFLAGS  = -mtune=vr4300 -march=vr4300",
+                                    "CFLAGS   = -Os -G 0 -mabi=32 -mtune=vr4300 -march=vr4300",
+                                    "",
+                                   $"default: {CreateProjectOptions.Name}.elf",
+                                    "",
+                                    string.Join(
+                                        Environment.NewLine,
+                                        chunks
+                                            .SelectMany(x => new[]
+                                            {
+                                                $"{x.name}.o: {x.name}-example.o",
+                                                "\t$(LD) -r -o $@ $^",
+                                                ""
+                                            })
+                                    ),
+                                   $"{CreateProjectOptions.Name}.elf: {string.Join(" ", chunks.Select(x => x.name + ".o"))}",
+                                   $"\t$(LD) -T {CreateProjectOptions.Name}.ld -o $@ {string.Join(" ", chunks.SelectMany(x => x.libs).Select(x => $"-l{x}"))} $^",
+                                    "",
+                                    "clean:",
+                                    "\trm -vf *.elf *.o"
+                                };
+
+                                File.WriteAllText(
+                                    Path.Combine(dir, "Makefile"),
+                                    string.Join(Environment.NewLine, mkfile)
+                                );
+
+                                File.WriteAllText(
+                                    Path.Combine(dir, $"{CreateProjectOptions.Name}.ld"),
+                                    Toolchain.GenerateLinkerScript(
+                                        chunks
+                                            .Select(x => (x.name, new[] { x.name + ".o" }.Concat(x.libs.Select(y => $"lib{y}.a")), x.ramAddress, x.romAddress))
+                                    )
+                                    .script
+                                );
+
+                                var examples = chunks
+                                    .Select(x => x.name.Contains("hook")
+                                    ? new
+                                    {
+                                        Filename = $"{x.name}-example.S",
+                                        Lines = new[]
+                                        {
+                                            "#include <mips.h>",
+                                            "",
+                                            "\t.set\t\tnoreorder",
+                                            "\t.set\t\tnoat",
+                                            "",
+                                            $"\t.global\t\t{x.name}_example",
+                                            $"{x.name}_example:",
+                                            $"\tjal\t\t" + (chunks.Length > 1 ? $"{chunks.First(y => y.name != x.name).name}_example" : "0x400"),
+                                            "\tli\t\ta0,4"
+                                        }
+                                    }
+                                    : new
+                                    {
+                                        Filename = $"{x.name}-example.c",
+                                        Lines = new[]
+                                        {
+                                            $"#include \"{CreateProjectOptions.Name}.h\"",
+                                            "",
+                                            "int",
+                                            $"{x.name}_example ( void )",
+                                            "{",
+                                            $"\tchar *ptr = &__{x.name}_bss_start;",
+                                            "",
+                                            $"\twhile (ptr < &__{x.name}_bss_end)",
+                                            "\t\t*(ptr++) = 0;",
+                                            "}",
+                                            ""
+                                        }
+                                    });
+
+                                foreach (var x in examples)
+                                    File.WriteAllText(Path.Combine(dir, x.Filename), string.Join(Environment.NewLine, x.Lines));
+
+                                var guardDef = $"__{CreateProjectOptions.Name.ToUpper()}_H__";
+
+                                var header = new[]
+                                {
+                                    $"#ifndef {guardDef}",
+                                    $"#define {guardDef}",
+                                    "",
+                                    string.Join(
+                                        Environment.NewLine,
+                                        chunks
+                                            .SelectMany(x => new[] { "text", "data", "rodata", "bss" }.Select(y => new { x, y }))
+                                            .SelectMany(x => new[]
+                                            {
+                                                $"extern char __{x.x.name}_{x.y}_start;",
+                                                $"extern char __{x.x.name}_{x.y}_end;",
+                                                $"extern char __{x.x.name}_rom_{x.y}_start;",
+                                                $"extern char __{x.x.name}_rom_{x.y}_end;",
+                                            })
+                                            .Where(x => !x.Contains("_rom_bss"))
+                                    ),
+                                    "",
+                                    $"#endif /* {guardDef} */",
+                                    ""
+                                };
+
+                                File.WriteAllText(Path.Combine(dir, CreateProjectOptions.Name + ".h"), string.Join(Environment.NewLine, header));
+
+                                break;
+
+                            default:
+                                Console.Error.WriteLine("Project type `{0}' not supported.", CreateProjectOptions.Type);
+                                break;
                         }
                     }
                     break;

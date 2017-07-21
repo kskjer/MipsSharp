@@ -29,5 +29,17 @@ namespace MipsSharp.Tests
         {
             Assert.AreEqual("mips-elf-ld", Toolchain.Configuration.FromEnvironment().LdPath);
         }
+
+        [TestMethod]
+        public void TestTest()
+        {
+            var sss = Toolchain.GenerateLinkerScript(
+                new[]
+                {
+                    ("hook", new[] { "hook.o" } as IEnumerable<string>, 0x800A0000, 0x00002240U),
+                    ("main", new[] { "main.o" }, 0x80200000, 0x00040000U)
+                }
+            );
+        }
     }
 }
