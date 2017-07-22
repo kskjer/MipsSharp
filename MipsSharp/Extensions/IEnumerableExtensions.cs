@@ -44,5 +44,17 @@ namespace MipsSharp
             if (bufferIdx >= 1)
                 yield return selector(last, default(TInput));
         }
+
+        public static IEnumerable<IGrouping<int, T>> 
+        GroupByContiguousAddresses<T>(this IEnumerable<T> input, Func<T, UInt32> selector, UInt32 diff = 4)
+        {
+            var ptr = 0;
+
+            return input
+                .SelectWithNext((cur, next) => new { cur, next })
+                .Select(x => new { x.cur, x.next, grp = x.next == null ? ptr : (selector(x.next) - selector(x.cur) > diff ? ptr++ : ptr) })
+                .GroupBy(x => x.grp, x => x.cur)
+                .ToArray();
+        }
     }
 }

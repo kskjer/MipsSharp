@@ -18,6 +18,7 @@ using static MipsSharp.Mips.SignatureDatabase;
 using System.Reflection;
 using System.Globalization;
 using static MipsSharp.Nintendo64.RomAssembler;
+using ELFSharp.ELF;
 
 namespace MipsSharp
 {
@@ -41,7 +42,8 @@ namespace MipsSharp
             ShowHelp,
             EucJpStrings,
             AsmPatch,
-            CreateProject
+            CreateProject,
+            ElfPatch
         }
 
         enum ZeldaMode
@@ -98,10 +100,18 @@ namespace MipsSharp
             internal static string Name;
         }
 
+        private class ElfPatchOptions
+        {
+            public static string ElfFile;
+            public static string InputRom;
+            public static string OutputRom;
+        }
+
         static readonly OptionSet _operatingModes = new OptionSet
         {
             { "asm-patch"        , "Assemble patch and apply to ROM",                v => _mode = Mode.AsmPatch         },
             { "create-project"   , "Set up Makefiles for mips-elf project",          v => _mode = Mode.CreateProject    },
+            { "elf-patch"        , "Patch elf file into a ROM",                      v => _mode = Mode.ElfPatch         },
             { "eucjp-strings"    , "Find and dump EUC-JP encoded strings in input",  v => _mode = Mode.EucJpStrings     },
             { "import-signatures", "Import function signatures from .a file",        v => _mode = Mode.ImportSignatures },
             { "signatures"       , "Identify function signatures",                   v => _mode = Mode.Signatures       },
@@ -183,6 +193,24 @@ namespace MipsSharp
             { "r|rom=", "The path of the ROM to be patched, if ROM hack.", v => CreateProjectOptions.Rom = v },
             { "d|destination=", "Target folder to place the project files in.", v => CreateProjectOptions.Destination = v },
             { "n|name=", "Name of the project. Used in the generated files.", v => CreateProjectOptions.Name = v }
+        };
+
+        static readonly OptionSet _elfPatchOptions = new OptionSet
+        {
+            { "MipsSharp --elf-patch [OPTIONS]" },
+            { "" },
+            { "This utility patches a specially linked ELF file into a specified N64 ROM. " +
+                "It will use the LMA (load address) of the section as the patch location. " +
+                "Note that LMA is separate and less frequently encountered than the VMA " +
+                "(virtual memory address). LMA is where in ROM something may reside, while " +
+                "VMA is the location in RAM, and also the address at which the code will " +
+                "execute." },
+            { "" },
+            { "CRCs in the output ROM are updated after patching." },
+            { "" },
+            { "e|elf=", "ELF file to patch", v => ElfPatchOptions.ElfFile = v },
+            { "i|input=", "Input ROM", v => ElfPatchOptions.InputRom = v },
+            { "o|output=", "Output filename of new ROM", v => ElfPatchOptions.OutputRom = v }
         };
 
         static void MainSignatures(string[] args)
@@ -276,6 +304,10 @@ namespace MipsSharp
                     Console.WriteLine();
                     Console.WriteLine("Options for project creation:");
                     _createProjectOptions.WriteOptionDescriptions(Console.Out);
+
+                    Console.WriteLine();
+                    Console.WriteLine("Options for ELF file patching:");
+                    _elfPatchOptions.WriteOptionDescriptions(Console.Out);
                     break;
 
                 case Mode.Signatures:
@@ -434,31 +466,13 @@ namespace MipsSharp
 
                         if (!AsmPatchOptions.Gameshark)
                         {
-                            var input = File.ReadAllBytes(AsmPatchOptions.InputRom);
+                            byte[] input = ApplyAssembledInstructionsToRom(
+                                assembled,
+                                AsmPatchOptions.InputRom,
+                                AsmPatchOptions.OutputRom
+                            );
 
-                            foreach (var a in assembled)
-                                Utilities.WriteU32(a.Instruction, input, (int)a.RomAddress);
-
-                            Rom.ApplyCrcs(input, Rom.RecalculateCrc(input));
-
-                            File.WriteAllBytes(AsmPatchOptions.OutputRom, input);
-
-                            if (Verbosity > 0)
-                            {
-                                Console.Error.WriteLine("Raw dump of patched values:");
-
-                                var lines = assembled
-                                    .SelectWithNext(
-                                        (cur, next) =>
-                                            next != null && next.RamAddress - cur.RamAddress > 4
-                                            ? new[] { $"    {cur}", "--" }
-                                            : new[] { $"    {cur}" }
-                                    )
-                                    .SelectMany(x => x);
-
-                                foreach (var x in lines)
-                                    Console.Error.WriteLine(x);
-                            }
+                            DumpAssembledValues(assembled);
 
                             Console.Error.WriteLine("Patched {0} bytes.", assembled.Length * 4);
 
@@ -511,6 +525,8 @@ namespace MipsSharp
                             case "rom-hack":
                                 var mkfile = new[]
                                 {
+                                   $"MIPSSHARP = dotnet \"{Path.Combine(AppContext.BaseDirectory, "MipsSharp.dll")}\"",
+                                    "",
                                     "CC = mips-elf-gcc",
                                     "LD = mips-elf-ld",
                                     "",
@@ -533,8 +549,13 @@ namespace MipsSharp
                                    $"{CreateProjectOptions.Name}.elf: {string.Join(" ", chunks.Select(x => x.name + ".o"))}",
                                    $"\t$(LD) -T {CreateProjectOptions.Name}.ld -o $@ {string.Join(" ", chunks.SelectMany(x => x.libs).Select(x => $"-l{x}"))} $^",
                                     "",
+                                   $"patch: {CreateProjectOptions.Name}.z64",
+                                    "",
+                                   $"{CreateProjectOptions.Name}.z64: {CreateProjectOptions.Name}.elf",
+                                   $"\t$(MIPSSHARP) --elf-patch -e $^ -i \"{Path.GetFileName(CreateProjectOptions.Rom)}\" -o $@",
+                                    "",
                                     "clean:",
-                                    "\trm -vf *.elf *.o"
+                                   $"\trm -vf *.elf *.o {CreateProjectOptions.Name}.z64"
                                 };
 
                                 File.WriteAllText(
@@ -617,7 +638,7 @@ namespace MipsSharp
                                 };
 
                                 File.WriteAllText(Path.Combine(dir, CreateProjectOptions.Name + ".h"), string.Join(Environment.NewLine, header));
-
+                                File.Copy(CreateProjectOptions.Rom, Path.Combine(dir, Path.GetFileName(CreateProjectOptions.Rom)), true);
                                 break;
 
                             default:
@@ -627,9 +648,72 @@ namespace MipsSharp
                     }
                     break;
 
+                case Mode.ElfPatch:
+                    {
+                        _elfPatchOptions.Parse(extra);
+
+                        var data = ELFReader.Load<uint>(ElfPatchOptions.ElfFile)
+                            .GetAllocatableData()
+                            .ToArray();
+
+                        ApplyAssembledInstructionsToRom(
+                            data,
+                            ElfPatchOptions.InputRom,
+                            ElfPatchOptions.OutputRom
+                        );
+
+                        DumpAssembledValues(data);
+
+                        Console.Error.WriteLine(
+                            string.Join(
+                                Environment.NewLine,
+                                data
+                                    .GroupByContiguousAddresses(x => x.RamAddress)
+                                    .Select(x => $"Patched {x.Count() * 4} bytes at 0x{x.First().RomAddress.ToString("X8")}.")
+                            )
+                        );
+
+                        Console.Error.WriteLine("New ROM written to `{0}'.", ElfPatchOptions.OutputRom);
+                    }
+                    break;
+
                 default:
                     goto case Mode.ShowHelp;
             }
+        }
+
+        private static void DumpAssembledValues(AssembledInstruction[] assembled)
+        {
+            if (Verbosity > 0)
+            {
+                Console.Error.WriteLine("Raw dump of patched values:");
+
+                var lines = assembled
+                    .SelectWithNext(
+                        (cur, next) =>
+                            next != null && next.RamAddress - cur.RamAddress > 4
+                            ? new[] { $"    {cur}", "--" }
+                            : new[] { $"    {cur}" }
+                    )
+                    .SelectMany(x => x);
+
+                foreach (var x in lines)
+                    Console.Error.WriteLine(x);
+            }
+        }
+
+        private static byte[] ApplyAssembledInstructionsToRom(IEnumerable<AssembledInstruction> assembled, string inputRom, string outputRom)
+        {
+            var input = File.ReadAllBytes(inputRom);
+
+            foreach (var a in assembled)
+                Utilities.WriteU32(a.Instruction, input, (int)a.RomAddress);
+
+            Rom.ApplyCrcs(input, Rom.RecalculateCrc(input));
+
+            File.WriteAllBytes(outputRom, input);
+
+            return input;
         }
 
         private static bool _alreadyUsedStdin = false;
