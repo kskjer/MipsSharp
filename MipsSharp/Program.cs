@@ -43,7 +43,8 @@ namespace MipsSharp
             EucJpStrings,
             AsmPatch,
             CreateProject,
-            ElfPatch
+            ElfPatch,
+            LinkerScript
         }
 
         enum ZeldaMode
@@ -118,6 +119,7 @@ namespace MipsSharp
             { "create-project"   , "Set up Makefiles for mips-elf project",          v => _mode = Mode.CreateProject    },
             { "elf-patch"        , "Patch elf file into a ROM",                      v => _mode = Mode.ElfPatch         },
             { "eucjp-strings"    , "Find and dump EUC-JP encoded strings in input",  v => _mode = Mode.EucJpStrings     },
+            { "linker-script"    , "Produce a linker script for use with GNU ld",    v => _mode = Mode.LinkerScript     },
             { "import-signatures", "Import function signatures from .a file",        v => _mode = Mode.ImportSignatures },
             { "signatures"       , "Identify function signatures",                   v => _mode = Mode.Signatures       },
             { "zelda64"          , "Operations pertaining to Zelda 64 ROMs",         v => _mode = Mode.Zelda64          },
@@ -245,6 +247,16 @@ namespace MipsSharp
             { "e|elf=", "ELF file to patch", v => ElfPatchOptions.ElfFile = v },
             { "i|input=", "Input ROM", v => ElfPatchOptions.InputRom = v },
             { "o|output=", "Output filename of new ROM", v => ElfPatchOptions.OutputRom = v }
+        };
+
+        static readonly OptionSet _linkerScriptOptions = new OptionSet
+        {
+            { "MipsSharp --linker-script [OPTIONS] [CHUNK SPECIFICATION]+" },
+            { "" },
+            { "This mode produces linker scripts usable by GNU ld. These linker scripts describe the ROM and RAM layout of " +
+                "a program. The format of the chunk specification is the same as for the --create-project option." },
+            { "" },
+            { "The output of this command is written to stdout rather than a file." },
         };
 
         static void MainSignatures(string[] args)
@@ -512,19 +524,9 @@ namespace MipsSharp
 
                 case Mode.CreateProject:
                     {
-                        var chunks = _createProjectOptions.Parse(extra)
-                            .Select(x =>
-                            {
-                                var arr = x.Split(',');
+                        IEnumerable<string> chunkList;
 
-                                return (
-                                    ramAddress: Convert.ToUInt32(arr[0], 16),
-                                    romAddress: Convert.ToUInt32(arr[1], 16),
-                                    name: arr[2],
-                                    libs: arr.Skip(3)
-                                );
-                            })
-                            .ToArray();
+                        ParseChunksAndCreateLinkerScript(chunkList = _createProjectOptions.Parse(extra), out var chunks, out var linkerScript);
 
                         var dir = CreateProjectOptions.Destination;
 
@@ -556,7 +558,10 @@ namespace MipsSharp
                                                 ""
                                             })
                                     ),
-                                   $"{CreateProjectOptions.Name}.elf: {string.Join(" ", chunks.Select(x => x.name + ".o"))}",
+                                   $"{CreateProjectOptions.Name}.ld:",
+                                   $"\t$(MIPSSHARP) --linker-script {string.Join(" ", chunkList)} > $@",
+                                   "",
+                                   $"{CreateProjectOptions.Name}.elf: {string.Join(" ", chunks.Select(x => x.name + ".o"))} {CreateProjectOptions.Name}.ld",
                                    $"\t$(LD) -T {CreateProjectOptions.Name}.ld -o $@ {string.Join(" ", chunks.SelectMany(x => x.libs).Select(x => $"-l{x}"))} $^",
                                     "",
                                    $"patch: {CreateProjectOptions.Name}.z64",
@@ -565,21 +570,12 @@ namespace MipsSharp
                                    $"\t$(MIPSSHARP) --elf-patch -e $^ -i \"{Path.GetFileName(CreateProjectOptions.Rom)}\" -o $@",
                                     "",
                                     "clean:",
-                                   $"\trm -vf *.elf *.o {CreateProjectOptions.Name}.z64"
+                                   $"\trm -vf *.elf *.o {CreateProjectOptions.Name}.z64 {CreateProjectOptions.Name}.ld"
                                 };
 
                                 File.WriteAllText(
                                     Path.Combine(dir, "Makefile"),
                                     string.Join(Environment.NewLine, mkfile)
-                                );
-
-                                File.WriteAllText(
-                                    Path.Combine(dir, $"{CreateProjectOptions.Name}.ld"),
-                                    Toolchain.GenerateLinkerScript(
-                                        chunks
-                                            .Select(x => (x.name, new[] { x.name + ".o" }.Concat(x.libs.Select(y => $"lib{y}.a")), x.ramAddress, x.romAddress))
-                                    )
-                                    .script
                                 );
 
                                 var examples = chunks
@@ -687,9 +683,40 @@ namespace MipsSharp
                     }
                     break;
 
+
+                case Mode.LinkerScript:
+                    {
+                        ParseChunksAndCreateLinkerScript(_createProjectOptions.Parse(extra), out var chunks, out var linkerScript);
+
+                        Console.WriteLine(linkerScript);
+                    }
+                    break;
+
                 default:
                     goto case Mode.ShowHelp;
             }
+        }
+
+        private static void ParseChunksAndCreateLinkerScript(IEnumerable<string> extra, out (uint ramAddress, uint romAddress, string name, IEnumerable<string> libs)[] chunks, out string linkerScript)
+        {
+            chunks = _createProjectOptions.Parse(extra)
+                .Select(x =>
+                {
+                    var arr = x.Split(',');
+
+                    return (
+                        ramAddress: Convert.ToUInt32(arr[0], 16),
+                        romAddress: Convert.ToUInt32(arr[1], 16),
+                        name: arr[2],
+                        libs: arr.Skip(3)
+                    );
+                })
+                .ToArray();
+            linkerScript = Toolchain.GenerateLinkerScript(
+                    chunks
+                        .Select(x => (x.name, new[] { x.name + ".o" }.Concat(x.libs.Select(y => $"lib{y}.a")), x.ramAddress, x.romAddress))
+                )
+                .script;
         }
 
         private static void DumpAssembledValues(AssembledInstruction[] assembled)
