@@ -303,27 +303,20 @@ namespace MipsSharp
                 case Mode.ShowHelp:
 
                     Console.Error.WriteLine(
-                        new[]
-                        {
-                            _operatingModes,
-                            _signatureOptions,
-                            _importSignatureOptions,
-                            _zelda64Modes,
-                            _eucJpOptions,
-                            _asmPatchOptions,
-                            _createProjectOptions,
-                            _elfPatchOptions
-                        }
-                        .Select(x =>
-                        {
-                            var ms = new MemoryStream();
+                        typeof(Program)
+                            .GetFields(BindingFlags.NonPublic | BindingFlags.Static)
+                            .Where(f => f.FieldType == typeof(OptionSet))
+                            .Select(f => f.GetValue(null) as OptionSet)
+                            .Select(x =>
+                            {
+                                var ms = new MemoryStream();
 
-                            using (var sw = new StreamWriter(ms))
-                                x.WriteOptionDescriptions(sw);
+                                using (var sw = new StreamWriter(ms))
+                                    x.WriteOptionDescriptions(sw);
 
-                            return Encoding.UTF8.GetString(ms.ToArray());
-                        })
-                        .Join(Environment.NewLine.Dup(3))
+                                return Encoding.UTF8.GetString(ms.ToArray());
+                            })
+                            .Join(Environment.NewLine.Dup(3))
                     );
                     break;
 
