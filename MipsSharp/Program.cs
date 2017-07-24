@@ -109,6 +109,11 @@ namespace MipsSharp
 
         static readonly OptionSet _operatingModes = new OptionSet
         {
+            { "Usage: MipsSharp [MODE] [OPTIONS] [FILE]" },
+            { "" },
+            { "This program has several operating modes. It must be specified on the command line with a flag which " +
+              "mode you wish to use." },
+            { "" }, 
             { "asm-patch"        , "Assemble patch and apply to ROM",                v => _mode = Mode.AsmPatch         },
             { "create-project"   , "Set up Makefiles for mips-elf project",          v => _mode = Mode.CreateProject    },
             { "elf-patch"        , "Patch elf file into a ROM",                      v => _mode = Mode.ElfPatch         },
@@ -117,20 +122,27 @@ namespace MipsSharp
             { "signatures"       , "Identify function signatures",                   v => _mode = Mode.Signatures       },
             { "zelda64"          , "Operations pertaining to Zelda 64 ROMs",         v => _mode = Mode.Zelda64          },
             { "help"             , "Show this message and exit",                     v => _mode = Mode.ShowHelp         },
+            { "" },
+            { "Options that affect all operating modes:" },
+            { "v", "Increase verbosity", v => Verbosity++ },
         };
 
         static readonly Overlay.Options _overlayOptions = new Overlay.Options();
 
         static int Verbosity;
 
-        static readonly OptionSet _globalOptions = new OptionSet
-        {
-            { "v", "Increase verbosity", v => Verbosity++ },
-        };
-
 
         static readonly OptionSet _signatureOptions = new OptionSet
         {
+            { "MipsSharp --signatures [OPTIONS] [ROM FILE]" },
+            { "" },
+            { "Function signatures are a way of identifying standard library functions in a fully linked executable " + 
+                "(ROM). This is very useful for hacking, as some of these methods may need to be intercepted or called " +
+                "within the hack itself." },
+            { "" },
+            { "The signatures themselves are stored in an SQLite database. MipsSharp can perform both importation and " +
+                "identification of functions in ROMs." },
+            { "" },
             { "i|indent", "Format/beautify output JSON", v => SignaturesOptions.IndentJson = true },
             { "d|database=", "Specify signature database location", v => SignaturesOptions.DatabasePath = v },
             { "s|short", "Short mode. Only 1 address and symbol name per line. If multiple matches found, names are separated with a pipe.", v => SignaturesOptions.ShortMode = true },
@@ -140,27 +152,38 @@ namespace MipsSharp
 
         static readonly OptionSet _importSignatureOptions = new OptionSet
         {
+            { "MipsSharp --import-signatures [OPTIONS] [LIBRARY FILES]" },
+            { "" },
+            { "Imports archives into the function signature database. More than one archive may be specified." },
+            { "" },
             { "d|database=", "Specify signature database location", v => SignaturesOptions.DatabasePath = v },
             { "c|clean",     "Clean database before import", v => SignaturesOptions.CleanDatabase = true }
         };
 
         static readonly OptionSet _zelda64Modes = new OptionSet
         {
+            { "MipsSharp --zelda64 [SUB MODE] [OPTIONS]" },
+            { "" },
+            { "The Zelda 64 operating mode has several sub-modes. They are detailed below." },
+            { "" },
             { "O|elf-to-ovl", "Generate overlay relocations .c file", v => _zeldaMode = ZeldaMode.GenerateOverlayRelocs },
             { "e|extract", "Extract the contents of a Zelda 64 ROM", v => _zeldaMode = ZeldaMode.Extract },
             { "D|disassemble-overlay", "Disassemble an overlay file", v => _zeldaMode = ZeldaMode.DisassembleOverlay },
             { "A|disassemble-all", "Disassemble all overlay files in ROM", v => _zeldaMode = ZeldaMode.DisassembleAllOverlays },
-            { "R|dump-relocs", "Dump relocation table for overlay", v => _zeldaMode = ZeldaMode.DumpRelocations }
-        };
-
-        static readonly OptionSet _disasmOptions = new OptionSet
-        {
+            { "R|dump-relocs", "Dump relocation table for overlay", v => _zeldaMode = ZeldaMode.DumpRelocations },
+            { "" },
+            { "The following options apply to disassembly sub-modes under Zelda 64:" },
             { "P|pc", "Print PC and raw instruction next to disasembly", v => DisassemblyOptions.DebugPc = true },
             { "n|number", "Use a symbol's index instead of its address for name", v => _overlayOptions.NumberSymbols = true }
         };
 
+
         static readonly OptionSet _eucJpOptions = new OptionSet
         {
+            { "MipsSharp --euc-jp [INPUT FILES]" },
+            { "" },
+            { "Identifies EUC-JP strings in the supplied files. EUC-JP is an old encoding used for Japanese characters." },
+            { "" },
             { "json", "Output results as JSON", v => EucJpOptions.Json = true },
             { "only-foreign", "Only show strings that have EUC-JP chars", v => EucJpOptions.OnlyForeign = true },
             { "min-length=", "Minimum length of strings to display", v => EucJpOptions.MinStringLength = int.Parse(v) }
@@ -168,6 +191,10 @@ namespace MipsSharp
 
         static readonly OptionSet _asmPatchOptions = new OptionSet
         {
+            { "MipsSharp --asm-patch [OPTIONS]" },
+            { "" },
+            { "Compiles and links an assembly patch and patches it into a ROM or creates a Gameshark code." },
+            { "" },
             { "i|input=", "Input ROM", v => AsmPatchOptions.InputRom = v },
             { "g|gameshark", "Build Gameshark code instead of writing to ROM", v => AsmPatchOptions.Gameshark = true },
             { "o|output=", "Output ROM", v => AsmPatchOptions.OutputRom = v },
@@ -178,7 +205,7 @@ namespace MipsSharp
 
         static readonly OptionSet _createProjectOptions = new OptionSet
         {
-            { "MipsSharp --create-project [FLAGS] [CHUNK SPECIFICATION]..." },
+            { "MipsSharp --create-project [FLAGS] [CHUNK SPECIFICATION]+" },
             { "" },
             { "This utility sets up a folder to contain a project. It sets up Makefiles and example sources." },
             { "" },
@@ -187,6 +214,13 @@ namespace MipsSharp
               "For example:" },
             { "" },
             { "  MipsSharp                       \\\n      --create-project            \\\n      --type=rom-hack             \\\n      --rom='Zelda64.z64'         \\\n      --destination=./new-folder  \\\n      0x80000400,0x00001000,hook  \\\n      0x800A8000,0x000A0000,main" },
+            { "" },
+            { "Optionally, after the chunk name, one may supply additional comma separated values which indicates " +
+                "libraries that are to be linked into this chunk. For example:" },
+            { "" },
+            { "    0x80400000,0x00A00000,main,c" },
+            { "" },
+            { "The above will tell the linker to place the \"libc.a\" library in the \"main\" chunk." },
             { "" },
             { "Options:" },
             { "t|type=", "The type of project to create. Currently only `rom-hack' is supported.", v => CreateProjectOptions.Type = v },
@@ -262,52 +296,35 @@ namespace MipsSharp
         {
             Console.OutputEncoding = Encoding.UTF8;
 
-            var extra = _globalOptions.Parse(_operatingModes.Parse(args));
+            var extra = _operatingModes.Parse(args);
 
-            switch(_mode)
+            switch (_mode)
             {
                 case Mode.ShowHelp:
-                    Console.WriteLine("Usage: {0} [MODE] [OPTIONS]+ file", Path.GetFileNameWithoutExtension(typeof(Program).GetTypeInfo().Assembly.Location));
-                    Console.WriteLine();
 
-                    Console.WriteLine("The application supports the following modes:");
-                    _operatingModes.WriteOptionDescriptions(Console.Out);
-                    
-                    Console.WriteLine();
-                    Console.WriteLine("Global options:");
-                    _globalOptions.WriteOptionDescriptions(Console.Out);
+                    Console.Error.WriteLine(
+                        new[]
+                        {
+                            _operatingModes,
+                            _signatureOptions,
+                            _importSignatureOptions,
+                            _zelda64Modes,
+                            _eucJpOptions,
+                            _asmPatchOptions,
+                            _createProjectOptions,
+                            _elfPatchOptions
+                        }
+                        .Select(x =>
+                        {
+                            var ms = new MemoryStream();
 
-                    Console.WriteLine();
-                    Console.WriteLine("Options for identifying function signatures:");
-                    _signatureOptions.WriteOptionDescriptions(Console.Out);
+                            using (var sw = new StreamWriter(ms))
+                                x.WriteOptionDescriptions(sw);
 
-                    Console.WriteLine();
-                    Console.WriteLine("Options for importing function signatures:");
-                    _importSignatureOptions.WriteOptionDescriptions(Console.Out);
-
-                    Console.WriteLine();
-                    Console.WriteLine("Options for Zelda 64 operations:");
-                    _zelda64Modes.WriteOptionDescriptions(Console.Out);
-
-                    Console.WriteLine();
-                    Console.WriteLine("Options for disassembly operations:");
-                    _disasmOptions.WriteOptionDescriptions(Console.Out);
-
-                    Console.WriteLine();
-                    Console.WriteLine("Options for EUC-JP string identification:");
-                    _eucJpOptions.WriteOptionDescriptions(Console.Out);
-
-                    Console.WriteLine();
-                    Console.WriteLine("Options for assembly patches:");
-                    _asmPatchOptions.WriteOptionDescriptions(Console.Out);
-
-                    Console.WriteLine();
-                    Console.WriteLine("Options for project creation:");
-                    _createProjectOptions.WriteOptionDescriptions(Console.Out);
-
-                    Console.WriteLine();
-                    Console.WriteLine("Options for ELF file patching:");
-                    _elfPatchOptions.WriteOptionDescriptions(Console.Out);
+                            return Encoding.UTF8.GetString(ms.ToArray());
+                        })
+                        .Join(Environment.NewLine.Dup(3))
+                    );
                     break;
 
                 case Mode.Signatures:
@@ -352,7 +369,7 @@ namespace MipsSharp
 
                 case Mode.Zelda64:
                     {
-                        var files = _disasmOptions.Parse(_zelda64Modes.Parse(extra));
+                        var files = _zelda64Modes.Parse(extra);
 
                         switch(_zeldaMode)
                         {
