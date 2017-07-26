@@ -22,7 +22,10 @@ namespace MipsSharp
         public static IReadOnlyList<T> GetSegment<T>(this IReadOnlyList<T> list, int start) =>
             new ListSegment<T>(list, start, list.Count - start);
 
-        public static IEnumerable<TResult> SelectWithNext<TInput, TResult>(this IEnumerable<TInput> self, Func<TInput, TInput, TResult> selector)
+        public delegate TResult SelectWithNextDelegate<TInput, TResult>(TInput current, TInput next);
+        public delegate TResult SelectWithNextAndPreviousDelegate<TInput, TResult>(TInput current, TInput next, TInput previous);
+
+        public static IEnumerable<TResult> SelectWithNext<TInput, TResult>(this IEnumerable<TInput> self, SelectWithNextDelegate<TInput, TResult> selector)
         {
             var buffer = new TInput[2];
             var bufferIdx = 0;
@@ -43,6 +46,20 @@ namespace MipsSharp
 
             if (bufferIdx >= 1)
                 yield return selector(last, default(TInput));
+        }
+
+        public static IEnumerable<TResult> SelectWithNext<TInput, TResult>(this IEnumerable<TInput> self, SelectWithNextAndPreviousDelegate<TInput, TResult> selector)
+        {
+            TInput previous = default(TInput);
+
+            var data = self.SelectWithNext((x, next) => new { x, next });
+
+            foreach (var d in data)
+            {
+                yield return selector(d.x, d.next, previous);
+
+                previous = d.x;
+            }
         }
 
         public static IEnumerable<IGrouping<int, T>> 
