@@ -48,5 +48,37 @@ namespace MipsSharp.Tests
                     )
             );
         }
+
+        [TestMethod]
+        public void TestContiguousAddressVariableGrouping()
+        {
+            var input = new UInt32[]
+            {
+                0,
+                4,
+                8,
+                0x100,
+                0x108,
+                0x110,
+                0x2000,
+                0x2001,
+                0x2002,
+                0x2003
+            };
+
+            var result = input
+                .GroupByContiguousVariable(x => x)
+                .ToArray();
+
+            Assert.IsTrue(
+                result[0]
+                    .SequenceEqual(new uint[] { 0, 4, 8 })
+            );
+
+            Assert.IsTrue(
+                result[1]
+                    .SequenceEqual(new uint[] { 0x100, 0x108, 0x110 })
+            );
+        }
     }
 }

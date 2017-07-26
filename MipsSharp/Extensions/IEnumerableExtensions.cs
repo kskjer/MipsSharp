@@ -62,7 +62,7 @@ namespace MipsSharp
             }
         }
 
-        public static IEnumerable<IGrouping<int, T>> 
+        public static IEnumerable<IGrouping<int, T>>
         GroupByContiguousAddresses<T>(this IEnumerable<T> input, Func<T, UInt32> selector, UInt32 diff = 4)
         {
             var ptr = 0;
@@ -73,5 +73,42 @@ namespace MipsSharp
                 .GroupBy(x => x.grp, x => x.cur)
                 .ToArray();
         }
+
+        public static IEnumerable<IEnumerable<T>> GroupByContiguousVariable<T>(this IEnumerable<T> self, Func<T, UInt32> select)
+        {
+            T previous = default(T);
+
+            List<T> current = new List<T>();
+
+            int index = 0;
+            UInt32? difference = null;
+
+            foreach (var x in self)
+            {
+                if (index != 0)
+                {
+                    if (!difference.HasValue)
+                    {
+                        difference = select(x) - select(previous);
+                    }
+                    else if (select(x) - select(previous) != difference.Value)
+                    {
+                        yield return current;
+
+                        current = new List<T>();
+                        difference = null;
+                    }
+                }
+
+                current.Add(x);
+
+                previous = x;
+                index++;
+            }
+
+            if (current.Count != 0)
+                yield return current;
+        }
+
     }
 }
