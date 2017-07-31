@@ -259,17 +259,6 @@ namespace MipsSharp
             { "The output of this command is written to stdout rather than a file." },
         };
 
-        static void MainSignatures(string[] args)
-        {
-            var signatures = new SignatureDatabase("signatures.db");
-            var rom = new Rom(args[0]);
-
-            Console.WriteLine(
-                JsonConvert.SerializeObject(
-                    signatures.Identify(rom.GetExecutable())
-                )
-            );
-        }
 
         static void MainExtract(string[] args)
         {

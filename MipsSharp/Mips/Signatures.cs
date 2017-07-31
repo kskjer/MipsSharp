@@ -507,6 +507,12 @@ namespace MipsSharp.Mips
 
         public SignatureDatabase(string dbPath)
         {
+            if (!File.Exists(dbPath))
+                throw new FileNotFoundException($"File `{dbPath}' was not found.");
+
+            if (new FileInfo(dbPath).Length == 0)
+                throw new ArgumentException($"Database `{dbPath}' is empty.");
+
             using (var db = new SqliteConnection(GetConnectionString(dbPath)))
             {
                 var masks        = db.Query<sqlMask>       ("SELECT * FROM masks");
