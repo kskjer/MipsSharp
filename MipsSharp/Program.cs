@@ -580,6 +580,7 @@ namespace MipsSharp
                                             "\t.set\t\tnoat",
                                             "",
                                             $"\t.global\t\t{x.name}_example",
+                                            $"\t.type\t\t{x.name}, @function",
                                             $"{x.name}_example:",
                                             $"\tjal\t\t" + (chunks.Length > 1 ? $"{chunks.First(y => y.name != x.name).name}_example" : "0x400"),
                                             "\tli\t\ta0,4"
