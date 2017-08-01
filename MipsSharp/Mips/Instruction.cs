@@ -26,6 +26,9 @@ namespace MipsSharp.Mips
         private static readonly Interpreter<MipsInstruction> _insnInterp =
             new Interpreter<MipsInstruction>(() => MipsInstruction.Invalid);
 
+        private static readonly Interpreter<TypeHint> _interpTypeHinting =
+            new Interpreter<TypeHint>(() => 0);
+        
         private static readonly IDisassembler _disassembler =
             Disassembler.DefaultWithoutPcWithoutPseudoInstructions;
 
@@ -244,6 +247,25 @@ namespace MipsSharp.Mips
             _insnInterp.Handlers.TLTU      = (p, i) => MipsInstruction.TLTU;
             _insnInterp.Handlers.TNE       = (p, i) => MipsInstruction.TNE;
             _insnInterp.Handlers.TNEI      = (p, i) => MipsInstruction.TNEI;
+
+            _interpTypeHinting.Handlers.LB = (p, i) => TypeHint.Byte;
+            _interpTypeHinting.Handlers.LBU = (p, i) => TypeHint.ByteUnsigned;
+            _interpTypeHinting.Handlers.LH = (p, i) => TypeHint.HalfWord;
+            _interpTypeHinting.Handlers.LHU = (p, i) => TypeHint.HalfWordUnsigned;
+            _interpTypeHinting.Handlers.LW = (p, i) => TypeHint.Word;
+            _interpTypeHinting.Handlers.LWU = (p, i) => TypeHint.WordUnsigned;
+            _interpTypeHinting.Handlers.LD = (p, i) => TypeHint.DoubleWord;
+            _interpTypeHinting.Handlers.SB = (p, i) => TypeHint.Byte;
+            _interpTypeHinting.Handlers.SH = (p, i) => TypeHint.HalfWord;
+            _interpTypeHinting.Handlers.SW = (p, i) => TypeHint.Word;
+            _interpTypeHinting.Handlers.SD = (p, i) => TypeHint.DoubleWord;
+
+            _interpTypeHinting.Handlers.LWC1 = (p, i) => TypeHint.Single;
+            _interpTypeHinting.Handlers.LDC1 = (p, i) => TypeHint.Double;
+            _interpTypeHinting.Handlers.SWC1 = (p, i) => TypeHint.Single;
+            _interpTypeHinting.Handlers.SDC1 = (p, i) => TypeHint.Double;
+
+            _interpTypeHinting.Handlers.JAL = (p, i) => TypeHint.Function;
         }
 
         #endregion
@@ -261,6 +283,9 @@ namespace MipsSharp.Mips
 
         public MipsInstruction Id =>
             _insnInterp.Execute(0x80000000, this);
+
+        public TypeHint TypeHint =>
+            _interpTypeHinting.Execute(0x80000000, this);
 
         #endregion
 
