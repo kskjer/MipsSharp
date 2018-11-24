@@ -44,7 +44,8 @@ namespace MipsSharp
             AsmPatch,
             CreateProject,
             ElfPatch,
-            LinkerScript
+            LinkerScript,
+            Rom
         }
 
         enum ZeldaMode
@@ -59,6 +60,14 @@ namespace MipsSharp
 
         static Mode _mode;
         static ZeldaMode _zeldaMode;
+
+        enum RomMode
+        {
+            NotSet = 0,
+            FixCrc,
+        }
+
+        static RomMode _romMode;
 
         private class SignaturesOptions
         {
@@ -123,6 +132,7 @@ namespace MipsSharp
             { "import-signatures", "Import function signatures from .a file",        v => _mode = Mode.ImportSignatures },
             { "signatures"       , "Identify function signatures",                   v => _mode = Mode.Signatures       },
             { "zelda64"          , "Operations pertaining to Zelda 64 ROMs",         v => _mode = Mode.Zelda64          },
+            { "rom"              , "N64 ROM utilities",                              v => _mode = Mode.Rom              },
             { "help"             , "Show this message and exit",                     v => _mode = Mode.ShowHelp         },
             { "" },
             { "Options that affect all operating modes:" },
@@ -259,6 +269,15 @@ namespace MipsSharp
             { "The output of this command is written to stdout rather than a file." },
         };
 
+        static readonly OptionSet _romOptions = new OptionSet
+        {
+            { "MipsSharp --rom [ACTION] [ROM]" },
+            { "" },
+            { "Utility functions to be performed on ROMs." },
+            { "" },
+            { "Action may be one of:" },
+            { "fix-crc", "Recalculate CRC. Updates ROM in place." , v => _romMode = RomMode.FixCrc },
+        };
 
         static void MainExtract(string[] args)
         {
@@ -302,7 +321,6 @@ namespace MipsSharp
             switch (_mode)
             {
                 case Mode.ShowHelp:
-
                     Console.Error.WriteLine(
                         typeof(Program)
                             .GetFields(BindingFlags.NonPublic | BindingFlags.Static)
@@ -679,6 +697,37 @@ namespace MipsSharp
                         ParseChunksAndCreateLinkerScript(_createProjectOptions.Parse(extra), out var chunks, out var linkerScript);
 
                         Console.WriteLine(linkerScript);
+                    }
+                    break;
+
+                case Mode.Rom:
+                    {
+                        var roms = _romOptions.Parse(extra);
+
+                        switch (_romMode)
+                        {
+                            case RomMode.FixCrc:
+                                foreach (var r in roms)
+                                {
+                                    var rom = new Rom(r);
+                                    var newCrcs = Rom.RecalculateCrc(rom.Data);
+
+                                    if ((newCrcs[0], newCrcs[1]) == (rom.Header.Crc[0], rom.Header.Crc[1]))
+                                    {
+                                        Console.Error.WriteLine("CRC already OK for \"{0}\"", r);
+                                        continue;
+                                    }
+
+                                    var newRom = rom.Data.ToArray();
+
+                                    Rom.ApplyCrcs(newRom, newCrcs);
+                                    File.WriteAllBytes(r, newRom);
+
+                                    Console.Error.WriteLine("Updated CRCs (old: {0:X8} {1:X8}, new: {2:X8} {3:X8}) for \"{4}\"", 
+                                        rom.Header.Crc[0], rom.Header.Crc[1], newCrcs[0], newCrcs[1], r);
+                                }
+                                break;
+                        }
                     }
                     break;
 
