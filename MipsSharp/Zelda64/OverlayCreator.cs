@@ -101,7 +101,8 @@ namespace MipsSharp.Zelda64
         }
 
         private static string MakefileEscape(string s) =>
-            s.Replace(" ", "\\ ");
+            s.Replace("\\", "\\\\")
+             .Replace(" ", "\\ ");
 
         public static string GenerateMakefileForOvl(string mipsSharpPath, string ovlName, UInt32 ovlEntryPoint)
         {
@@ -116,7 +117,7 @@ namespace MipsSharp.Zelda64
                     "PARTS    = $(OVL_NAME).o",
                     "TARGET   = $(OVL_NAME).elf",
                     "",
-                   $"include {MakefileEscape(mipsSharpPath)}/dist/z64-ovl.mk"
+                   $"include {Path.Combine(MakefileEscape(mipsSharpPath), "dist", "z64-ovl.mk")}"
                 }
             );
         }
