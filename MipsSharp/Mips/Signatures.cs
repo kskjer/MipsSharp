@@ -429,6 +429,9 @@ namespace MipsSharp.Mips
                 Matches = matches;
             }
 
+            public SignatureMatch WithMatches(IReadOnlyList<VariantMatch> matches) =>
+                new SignatureMatch(_function, matches);
+
             public override string ToString() =>
                 string.Format("{0:X8}: {1} ({2} symbols)", _function.StartAddress, string.Join(" | ", Matches.Select(m => m.Name)), Matches.Sum(m => m.Symbols.Count));
         }
@@ -477,9 +480,9 @@ namespace MipsSharp.Mips
                 .ToArray();
         }
 
-        public IReadOnlyList<SignatureMatch> Identify(IEnumerable<InstructionWithPc> instructions)
+        public IReadOnlyList<SignatureMatch> Identify(IEnumerable<InstructionWithPc> instructions, bool verifyUncertain)
         {
-            return instructions
+            var result = instructions
                 .DiscoverFunctions()
                 .Where(f => f.Instructions.Count > 1)
                 // Drop functions which are just jr $ra; nop
@@ -498,6 +501,32 @@ namespace MipsSharp.Mips
                         ))
                         .ToList()
                 ))
+                .ToList();
+
+            if (!verifyUncertain)
+                return result;
+
+            var definitiveSyms = result
+                .Where(x => x.Matches.Count == 1)
+                .SelectMany(x => x.Matches.SelectMany(y => y.Symbols))
+                .Select(x => (x.Key, x.Value))
+                .ToHashSet();
+
+            return result
+                .Select(x =>
+                {
+                    if (x.Matches.Count == 1)
+                        return x;
+
+                    var definitive = x.Matches
+                        .FirstOrDefault(m => m.Symbols.All(y => definitiveSyms.Contains((y.Key, y.Value))));
+
+                    if (definitive == null)
+                        return null;
+
+                    return x.WithMatches(new[] { definitive });
+                })
+                .Where(x => x != null)
                 .ToList();
         }
 
