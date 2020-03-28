@@ -74,6 +74,7 @@ namespace MipsSharp
             public static bool IndentJson = false;
             public static string DatabasePath = "signatures.db";
             public static bool ShortMode = false;
+            public static bool UseHexAddrs = true;
             internal static bool CleanDatabase;
             internal static bool ShowAll;
 
@@ -158,6 +159,7 @@ namespace MipsSharp
             { "i|indent", "Format/beautify output JSON", v => SignaturesOptions.IndentJson = true },
             { "d|database=", "Specify signature database location", v => SignaturesOptions.DatabasePath = v },
             { "s|short", "Short mode. Only 1 address and symbol name per line. If multiple matches found, names are separated with a pipe.", v => SignaturesOptions.ShortMode = true },
+            { "c|decimal", "Use decimal for addresses, instead of hex. Doesn't affect short mode, which is hex by default.", v => SignaturesOptions.UseHexAddrs = false },
             { "S|slow", "Use the brute force method of identifying functions", v => SignaturesOptions.SlowMode = true },
             { "v|all", "Show all found extra symbols. Some are useless (e.g., \".text\", \".bss\". These are hidden by default.", v => SignaturesOptions.ShowAll = true }
         };
@@ -354,7 +356,24 @@ namespace MipsSharp
                             .First();
 
                         if (!SignaturesOptions.ShortMode)
-                            Console.WriteLine(JsonConvert.SerializeObject(results, SignaturesOptions.IndentJson ? Formatting.Indented : Formatting.None));
+                            Console.WriteLine(JsonConvert.SerializeObject(
+                                !SignaturesOptions.UseHexAddrs
+                                ? (results as object)
+                                : results
+                                    .Select(x => new
+                                    {
+                                        Start = string.Format("{0:X8}", x.Start),
+                                        x.Size,
+                                        Matches = x.Matches.Select(y => new
+                                        {
+                                            y.Name,
+                                            Symbols = y.Symbols
+                                                .Select(z => new { Key = string.Format("{0:X8}", z.Key), z.Value })
+                                                .ToDictionary(a => a.Key, a => a.Value)
+                                        })
+                                    }),
+                                SignaturesOptions.IndentJson ? Formatting.Indented : Formatting.None
+                            ));
                         else
                         {
                             Console.WriteLine(
