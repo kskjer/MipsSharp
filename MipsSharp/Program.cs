@@ -78,6 +78,7 @@ namespace MipsSharp
             public static bool Verify = false;
             internal static bool CleanDatabase;
             internal static bool ShowAll;
+            internal static bool MemDump;
 
             public static bool SlowMode { get; internal set; }
         }
@@ -162,6 +163,7 @@ namespace MipsSharp
             { "s|short", "Short mode. Only 1 address and symbol name per line. If multiple matches found, names are separated with a pipe.", v => SignaturesOptions.ShortMode = true },
             { "c|decimal", "Use decimal for addresses, instead of hex. Doesn't affect short mode, which is hex by default.", v => SignaturesOptions.UseHexAddrs = false },
             { "V|verify", "Verify functions with multiple matches, by checking if the symbols they refer to match those found in definitive matches.", v => SignaturesOptions.Verify = true },
+            { "m|mem", "Indicate that the supplied file is a memory dump, and not a ROM. Entry point assumed to be 0x8000_0000.", v => SignaturesOptions.MemDump = true },
             { "S|slow", "Use the brute force method of identifying functions", v => SignaturesOptions.SlowMode = true },
             { "v|all", "Show all found extra symbols. Some are useless (e.g., \".text\", \".bss\". These are hidden by default.", v => SignaturesOptions.ShowAll = true }
         };
@@ -354,7 +356,11 @@ namespace MipsSharp
                             : (x => sigs.Identify(x, SignaturesOptions.Verify));
 
                         var results = files
-                            .Select(f => action(new Rom(f).GetExecutable()))
+                            .Select(f => action(
+                                SignaturesOptions.MemDump
+                                ? File.ReadAllBytes(f).ToInstructions().WithPc(0x80000000)
+                                : new Rom(f).GetExecutable()
+                            ))
                             .First();
 
                         if (!SignaturesOptions.ShortMode)
